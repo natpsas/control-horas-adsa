@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Control de Actividades - San Antonio v5</title>
+<script src="https://alcdn.msauth.net/browser/2.38.3/js/msal-browser.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f4f8;color:#1a202c}
@@ -323,21 +324,27 @@ function guardarLS(){
 // Modo A (automático): SharePoint directo via sesión  → cuando el HTML corre desde .sharepoint.com
 // Modo B (configurado): Power Automate HTTP flows     → cuando corre desde GitHub Pages u otro host
 // =====================================================
+// === INTEGRACIÓN SHAREPOINT — MSAL (Azure AD) ===
+// =====================================================
 var SP_READY=false;
 var SP_GUARDANDO=false;
-var SP_MODO='none'; // 'directo' | 'powerautomate' | 'none'
-
-// --- Modo A: SharePoint directo ---
-var SP_URL='';
+var SP_URL='https://arandanosdesanantonio882.sharepoint.com/sites/ControlDeActividadesADSA';
+var SP_LIST='ControlHoras_Datos';
 var SP_DIGEST=null;
 var SP_DIGEST_TS=0;
-var SP_LIST='ControlHoras_Datos';
+var MSAL_TOKEN=null;
+var msalInstance=null;
 
-// --- Modo B: Power Automate ---
-var PA_URL_LEER='';
-var PA_URL_GUARDAR='';
+var MSAL_CFG={
+  auth:{
+    clientId:'c004a409-c452-4218-b1ea-3da474f21784',
+    authority:'https://login.microsoftonline.com/fccbb567-b3fc-4941-ab87-4182a44c8cc8',
+    redirectUri:'https://app.adsasas.com'
+  },
+  cache:{cacheLocation:'localStorage',storeAuthStateInCookie:false}
+};
+var SP_SCOPE=['https://arandanosdesanantonio882.sharepoint.com/AllSites.Write'];
 
-// --- UI estado ---
 function spEstado(msg,ok){
   var el=document.getElementById('saveStatus');if(!el)return;
   el.textContent=msg;el.style.opacity='1';
@@ -345,85 +352,84 @@ function spEstado(msg,ok){
   if(ok)setTimeout(function(){el.style.opacity='.5';el.style.color='rgba(255,255,255,.7)'},4000);
 }
 
-// Carga URLs guardadas de Power Automate
-function paCargarURLs(){
-  var r=localStorage.getItem('PA_URL_LEER'),g=localStorage.getItem('PA_URL_GUARDAR');
-  if(r)PA_URL_LEER=r;if(g)PA_URL_GUARDAR=g;
-}
-
-// --- INIT: detecta modo automáticamente ---
 async function spInit(){
-  paCargarURLs();
-  // MODO A: Si estamos en un dominio SharePoint, intentar sesión directa
-  if(window.location.hostname.indexOf('.sharepoint.com')>=0){
+  if(typeof msal==='undefined')throw new Error('MSAL.js no cargó');
+  msalInstance=new msal.PublicClientApplication(MSAL_CFG);
+  await msalInstance.initialize();
+  await msalInstance.handleRedirectPromise();
+  var accounts=msalInstance.getAllAccounts();
+  if(accounts.length>0){
     try{
-      var m=window.location.href.match(/(https:\/\/[^\/]+(?:\/sites\/[^\/]+)?)/);
-      SP_URL=m?m[1]:window.location.origin;
-      var r=await fetch(SP_URL+'/_api/web?$select=Title',{headers:{'Accept':'application/json;odata=nometadata'},credentials:'include'});
-      if(r.ok){SP_MODO='directo';SP_READY=true;console.log('SP Modo: directo ✅ '+SP_URL);return}
-    }catch(e){console.warn('SP directo falló, probando PA:',e.message)}
+      var resp=await msalInstance.acquireTokenSilent({scopes:SP_SCOPE,account:accounts[0]});
+      MSAL_TOKEN=resp.accessToken;SP_READY=true;
+      console.log('SP Modo: MSAL silencioso ✅');return;
+    }catch(e){console.warn('Token silencioso falló:',e.message)}
   }
-  // MODO B: Power Automate configurado
-  if(PA_URL_LEER&&PA_URL_GUARDAR){SP_MODO='powerautomate';SP_READY=true;console.log('SP Modo: Power Automate ✅');return}
-  throw new Error('Sin conexión. Configura Power Automate en Gestión → ☁️ Conexión SharePoint.');
+  // Necesita login interactivo — mostrar botón en lugar de popup al inicio
+  spEstado('🔑 Clic aquí para conectar');
+  throw new Error('login_required');
 }
 
-// --- LEER item (enruta según modo) ---
-async function spLeerItem(key){
+async function _getToken(){
+  if(!msalInstance)throw new Error('MSAL no inicializado');
+  var accounts=msalInstance.getAllAccounts();
   try{
-    if(SP_MODO==='directo')return await _spLeerDirecto(key);
-    if(SP_MODO==='powerautomate')return await _spLeerPA(key);
-  }catch(e){console.warn('spLeerItem "'+key+'":',e.message)}
-  return null;
+    var resp=await msalInstance.acquireTokenSilent({scopes:SP_SCOPE,account:accounts[0]||null});
+    MSAL_TOKEN=resp.accessToken;
+  }catch(e){
+    var resp2=await msalInstance.acquireTokenPopup({scopes:SP_SCOPE});
+    MSAL_TOKEN=resp2.accessToken;
+  }
+  return MSAL_TOKEN;
 }
 
-// --- ESCRIBIR item (enruta según modo) ---
-async function spEscribirItem(key,valor){
-  if(SP_MODO==='directo')return await _spEscribirDirecto(key,valor);
-  if(SP_MODO==='powerautomate')return await _spEscribirPA(key,valor);
-  throw new Error('Sin modo de conexión activo');
+async function spLoginYConectar(){
+  spEstado('🔑 Iniciando sesión...');
+  try{
+    var resp=await msalInstance.acquireTokenPopup({scopes:SP_SCOPE});
+    MSAL_TOKEN=resp.accessToken;SP_READY=true;
+    spEstado('☁️ Conectando...');
+    await spCargar();
+    poblarFiltros();stats();renderT1();renderGestion();
+    spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+  }catch(e){spEstado('⚠️ '+e.message);alert('Error de autenticación:\n'+e.message)}
 }
 
-// ---- MODO A: SharePoint REST directo ----
-async function _spLeerDirecto(key){
-  var enc=encodeURIComponent("Title eq '"+key+"'");
-  var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter="+enc+"&$select=Id,Title,Valor&$top=1",{headers:{'Accept':'application/json;odata=nometadata'},credentials:'include'});
-  if(!r.ok)return null;
-  var d=await r.json();return(d.value&&d.value.length)?d.value[0]:null;
-}
 async function _spGetDigest(){
   var now=Date.now();if(SP_DIGEST&&(now-SP_DIGEST_TS)<1500000)return SP_DIGEST;
-  var r=await fetch(SP_URL+'/_api/contextinfo',{method:'POST',headers:{'Accept':'application/json;odata=nometadata'},credentials:'include'});
-  if(!r.ok)throw new Error('No se pudo obtener Digest ('+r.status+')');
+  var token=await _getToken();
+  var r=await fetch(SP_URL+'/_api/contextinfo',{method:'POST',headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+  if(!r.ok)throw new Error('Digest error ('+r.status+')');
   var d=await r.json();SP_DIGEST=d.FormDigestValue;SP_DIGEST_TS=now;return SP_DIGEST;
 }
-async function _spEscribirDirecto(key,valor){
-  var digest=await _spGetDigest();var item=await _spLeerDirecto(key);
+
+async function spLeerItem(key){
+  try{
+    var token=await _getToken();
+    var enc=encodeURIComponent("Title eq '"+key+"'");
+    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter="+enc+"&$select=Id,Title,Valor&$top=1",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(!r.ok)return null;
+    var d=await r.json();return(d.value&&d.value.length)?d.value[0]:null;
+  }catch(e){console.warn('spLeerItem "'+key+'":',e.message);return null}
+}
+
+async function spEscribirItem(key,valor){
+  var token=await _getToken();
+  var digest=await _spGetDigest();
+  var item=await spLeerItem(key);
   var body=JSON.stringify({Title:key,Valor:JSON.stringify(valor)});
-  var hdr={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest};
+  var hdr={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token};
   if(item){
     hdr['IF-MATCH']='*';hdr['X-HTTP-Method']='MERGE';
-    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+item.Id+")",{method:'POST',headers:hdr,body:body,credentials:'include'});
+    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+item.Id+")",{method:'POST',headers:hdr,body:body});
     if(r.status!==204&&!r.ok)throw new Error('Error actualizar "'+key+'" ('+r.status+')');
   }else{
-    var r2=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items",{method:'POST',headers:hdr,body:body,credentials:'include'});
+    var r2=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items",{method:'POST',headers:hdr,body:body});
     if(!r2.ok){var t=await r2.text();throw new Error('Error crear "'+key+'" ('+r2.status+'): '+t.substring(0,80))}
   }
 }
 
-// ---- MODO B: Power Automate ----
-async function _spLeerPA(key){
-  var r=await fetch(PA_URL_LEER+'&key='+encodeURIComponent(key),{method:'GET'});
-  if(!r.ok)return null;
-  var d=await r.json();
-  return(d&&d.valor!==null&&d.valor!==undefined)?{Valor:d.valor,Id:d.id||0}:null;
-}
-async function _spEscribirPA(key,valor){
-  var r=await fetch(PA_URL_GUARDAR,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({key:key,valor:JSON.stringify(valor)})});
-  if(!r.ok){var t=await r.text();throw new Error('PA error "'+key+'" ('+r.status+'): '+t.substring(0,80))}
-}
-
-// ---- CARGAR / GUARDAR (comunes a ambos modos) ----
 async function spCargar(){
   var mapa={
     'asg':function(v){asg=v;localStorage.setItem('asg',JSON.stringify(v))},
@@ -439,17 +445,17 @@ async function spCargar(){
   };
   var ok=0;
   for(var k in mapa){try{var it=await spLeerItem(k);if(it&&it.Valor){mapa[k](JSON.parse(it.Valor));ok++}}catch(e){console.warn('spCargar "'+k+'":',e.message)}}
-  console.log('SharePoint: '+ok+'/'+Object.keys(mapa).length+' claves cargadas ['+SP_MODO+']');
+  console.log('SharePoint MSAL: '+ok+'/'+Object.keys(mapa).length+' claves cargadas');
 }
+
 async function spGuardar(){
   if(!SP_READY||SP_GUARDANDO)return;SP_GUARDANDO=true;
   var datos={'asg':asg,'reg':reg,'hue':hue,'usr':usr,'TRB':TRB,'ACT':ACT,'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'aprobMasiva':aprobacionMasivaActiva};
   try{for(var k in datos)await spEscribirItem(k,datos[k])}finally{SP_GUARDANDO=false}
 }
 
-// ---- Sincronizar manualmente ----
 function spSincronizarManual(){
-  if(!SP_READY){modalConexionPA();return}
+  if(!SP_READY){spLoginYConectar();return}
   spEstado('☁️ Sincronizando...');
   spCargar().then(function(){
     poblarFiltros();stats();renderT1();
@@ -459,38 +465,21 @@ function spSincronizarManual(){
   }).catch(function(e){alert('Error al sincronizar:\n'+e.message)});
 }
 
-// ---- Modal configuración Power Automate ----
 function modalConexionPA(){
-  var u1=PA_URL_LEER||'',u2=PA_URL_GUARDAR||'';
-  var modo=SP_MODO==='directo'?'<div class="alert al-i" style="font-size:11px">✅ <b>Modo activo: SharePoint directo</b> (sesión del navegador). Los flows de Power Automate son opcionales.</div>':
-    SP_MODO==='powerautomate'?'<div class="alert al-i" style="font-size:11px">✅ <b>Modo activo: Power Automate</b></div>':
-    '<div class="alert al-w" style="font-size:11px">⚠️ Sin conexión activa. Configura las URLs de los flows.</div>';
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:600px">';
-  mh+='<h2>☁️ Conexión SharePoint</h2>'+modo;
-  mh+='<div class="fg" style="margin-top:10px"><label>🔵 URL Flow "ControlHoras - Leer" (GET)</label>';
-  mh+='<textarea id="paUrlLeer" style="width:100%;height:75px;font-size:10px;font-family:monospace;border:2px solid #e2e8f0;border-radius:6px;padding:6px" placeholder="https://prod-xx.westus.logic.azure.com/workflows/.../triggers/manual/paths/invoke?...">'+u1+'</textarea></div>';
-  mh+='<div class="fg"><label>🟢 URL Flow "ControlHoras - Guardar" (POST)</label>';
-  mh+='<textarea id="paUrlGuardar" style="width:100%;height:75px;font-size:10px;font-family:monospace;border:2px solid #e2e8f0;border-radius:6px;padding:6px" placeholder="https://prod-xx.westus.logic.azure.com/workflows/.../triggers/manual/paths/invoke?...">'+u2+'</textarea></div>';
-  mh+='<p style="font-size:11px;color:#718096;margin:6px 0">Las URLs se guardan en este navegador. Cada usuario debe configurarlas una sola vez.</p>';
-  mh+='<div style="display:flex;gap:6px;margin-top:10px"><button class="btn btn-s" onclick="paGuardarConfig()">💾 Guardar y Conectar</button><button class="btn" style="background:#e2e8f0" onclick="cerrarModal()">Cancelar</button></div>';
+  var estado=SP_READY?
+    '<div class="alert al-i" style="font-size:11px">✅ <b>Conectado con Microsoft 365</b> (Azure AD / MSAL)</div>':
+    '<div class="alert al-w" style="font-size:11px">⚠️ No autenticado. Haz clic en "Iniciar sesión" para conectar.</div>';
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:480px">';
+  mh+='<h2>☁️ Conexión SharePoint</h2>'+estado;
+  mh+='<p style="font-size:12px;color:#4a5568;margin:10px 0">La app usa tu cuenta de Microsoft 365 para sincronizar datos directamente con SharePoint. No se requiere configuración adicional.</p>';
+  if(!SP_READY)mh+='<button class="btn btn-s" onclick="cerrarModal();spLoginYConectar()">🔑 Iniciar sesión con Microsoft 365</button>';
+  else mh+='<button class="btn btn-s" onclick="spSincronizarManual();cerrarModal()">🔄 Sincronizar ahora</button>';
+  mh+='<button class="btn" style="background:#e2e8f0;margin-left:6px" onclick="cerrarModal()">Cerrar</button>';
   mh+='</div></div>';
   document.getElementById('modalContainer').innerHTML=mh;
 }
-function paGuardarConfig(){
-  var u1=(document.getElementById('paUrlLeer').value||'').trim();
-  var u2=(document.getElementById('paUrlGuardar').value||'').trim();
-  if(!u1||!u2){alert('Pega ambas URLs de Power Automate');return}
-  PA_URL_LEER=u1;PA_URL_GUARDAR=u2;
-  localStorage.setItem('PA_URL_LEER',u1);localStorage.setItem('PA_URL_GUARDAR',u2);
-  cerrarModal();spEstado('☁️ Conectando...');
-  spInit().then(function(){return spCargar()}).then(function(){
-    poblarFiltros();stats();renderT1();renderGestion();
-    spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
-    alert('✅ Conectado a SharePoint vía Power Automate.\nLos datos se sincronizarán automáticamente cada vez que guardes.');
-  }).catch(function(e){spEstado('⚠️ '+e.message);alert('Error:\n'+e.message)});
-}
 // =====================================================
-// === FIN INTEGRACIÓN SHAREPOINT DUAL MODE ===
+// === FIN INTEGRACIÓN SHAREPOINT MSAL ===
 // =====================================================
 
 function cambiarFecha(){
