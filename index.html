@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Control de Actividades - San Antonio v5</title>
-<script src="./msal-browser.min.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:#f0f4f8;color:#1a202c}
@@ -288,6 +287,27 @@ function init(){
     var el=document.getElementById('saveStatus');
     if(el){el.style.opacity='1';setTimeout(function(){el.style.opacity='.5'},3000)}
   },30000);
+  // Auto-sincronizar desde SP cada 60 seg (recibir cambios de otros usuarios)
+  setInterval(function(){
+    if(!SP_READY||SP_GUARDANDO||limpiando)return;
+    spCargar().then(function(){
+      poblarFiltros();stats();renderT1();renderGestion();
+      var a=document.querySelector('.tc.active');
+      if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
+      spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+    }).catch(function(e){console.warn('Auto-sync SP:',e.message)});
+  },60000);
+  // Sincronizar al volver a la pestaña
+  document.addEventListener('visibilitychange',function(){
+    if(document.visibilityState==='visible'&&SP_READY&&!SP_GUARDANDO){
+      spCargar().then(function(){
+        poblarFiltros();stats();renderT1();renderGestion();
+        var a=document.querySelector('.tc.active');
+        if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
+        spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+      }).catch(function(e){console.warn('Visibility-sync SP:',e.message)});
+    }
+  });
   window.addEventListener('beforeunload',function(){if(!limpiando)guardarLS()});
 }
 function cargarLS(){
@@ -324,7 +344,7 @@ function guardarLS(){
 // Modo A (automático): SharePoint directo via sesión  → cuando el HTML corre desde .sharepoint.com
 // Modo B (configurado): Power Automate HTTP flows     → cuando corre desde GitHub Pages u otro host
 // =====================================================
-// === INTEGRACIÓN SHAREPOINT — MSAL (Azure AD) ===
+// === INTEGRACIÓN SHAREPOINT — OAuth PKCE nativo ===
 // =====================================================
 var SP_READY=false;
 var SP_GUARDANDO=false;
@@ -333,17 +353,11 @@ var SP_LIST='ControlHoras_Datos';
 var SP_DIGEST=null;
 var SP_DIGEST_TS=0;
 var MSAL_TOKEN=null;
-var msalInstance=null;
 
-var MSAL_CFG={
-  auth:{
-    clientId:'c004a409-c452-4218-b1ea-3da474f21784',
-    authority:'https://login.microsoftonline.com/fccbb567-b3fc-4941-ab87-4182a44c8cc8',
-    redirectUri:'https://app.adsasas.com'
-  },
-  cache:{cacheLocation:'localStorage',storeAuthStateInCookie:false}
-};
-var SP_SCOPE=['https://arandanosdesanantonio882.sharepoint.com/AllSites.Write'];
+var OAUTH_CLIENT_ID='c004a409-c452-4218-b1ea-3da474f21784';
+var OAUTH_TENANT='fccbb567-b3fc-4941-ab87-4182a44c8cc8';
+var OAUTH_REDIRECT='https://app.adsasas.com';
+var OAUTH_SCOPE='https://arandanosdesanantonio882.sharepoint.com/AllSites.Write offline_access openid';
 
 function spEstado(msg,ok){
   var el=document.getElementById('saveStatus');if(!el)return;
@@ -352,53 +366,89 @@ function spEstado(msg,ok){
   if(ok)setTimeout(function(){el.style.opacity='.5';el.style.color='rgba(255,255,255,.7)'},4000);
 }
 
+// --- PKCE helpers ---
+async function _pkceVerifier(){
+  var arr=new Uint8Array(32);crypto.getRandomValues(arr);
+  return btoa(String.fromCharCode.apply(null,arr)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+async function _pkceChallenge(v){
+  var buf=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(v));
+  return btoa(String.fromCharCode.apply(null,new Uint8Array(buf))).replace(/\+/g,'-').replace(/\//g,'_').replace(/=/g,'');
+}
+
 async function spInit(){
-  if(typeof msal==='undefined')throw new Error('MSAL.js no cargó');
-  msalInstance=new msal.PublicClientApplication(MSAL_CFG);
-  await msalInstance.initialize();
-  await msalInstance.handleRedirectPromise();
-  var accounts=msalInstance.getAllAccounts();
-  if(accounts.length>0){
-    try{
-      var resp=await msalInstance.acquireTokenSilent({scopes:SP_SCOPE,account:accounts[0]});
-      MSAL_TOKEN=resp.accessToken;SP_READY=true;
-      console.log('SP Modo: MSAL silencioso ✅');return;
-    }catch(e){console.warn('Token silencioso falló:',e.message)}
+  // 1. Verificar si hay callback OAuth en la URL
+  var params=new URLSearchParams(window.location.search);
+  var code=params.get('code'),state=params.get('state');
+  if(code&&state&&state===localStorage.getItem('oauth_state')){
+    // Intercambiar código por token
+    var verifier=localStorage.getItem('oauth_verifier');
+    var resp=await fetch('https://login.microsoftonline.com/'+OAUTH_TENANT+'/oauth2/v2.0/token',{
+      method:'POST',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({client_id:OAUTH_CLIENT_ID,grant_type:'authorization_code',
+        code:code,redirect_uri:OAUTH_REDIRECT,code_verifier:verifier,scope:OAUTH_SCOPE})
+    });
+    var tkn=await resp.json();
+    if(tkn.error)throw new Error(tkn.error_description||tkn.error);
+    localStorage.setItem('sp_token',tkn.access_token);
+    localStorage.setItem('sp_token_exp',Date.now()+tkn.expires_in*1000);
+    if(tkn.refresh_token)localStorage.setItem('sp_refresh',tkn.refresh_token);
+    MSAL_TOKEN=tkn.access_token;SP_READY=true;
+    // Limpiar URL
+    window.history.replaceState({},document.title,window.location.pathname);
+    console.log('SP OAuth PKCE ✅');return;
   }
-  // Necesita login interactivo — mostrar botón en lugar de popup al inicio
-  spEstado('🔑 Clic aquí para conectar');
+  // 2. Verificar token almacenado
+  var storedToken=localStorage.getItem('sp_token');
+  var tokenExp=parseInt(localStorage.getItem('sp_token_exp')||'0');
+  if(storedToken&&Date.now()<tokenExp-60000){
+    MSAL_TOKEN=storedToken;SP_READY=true;
+    console.log('SP token en caché ✅');return;
+  }
+  // 3. Intentar refresh token
+  var refresh=localStorage.getItem('sp_refresh');
+  if(refresh){
+    try{
+      var r=await fetch('https://login.microsoftonline.com/'+OAUTH_TENANT+'/oauth2/v2.0/token',{
+        method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},
+        body:new URLSearchParams({client_id:OAUTH_CLIENT_ID,grant_type:'refresh_token',
+          refresh_token:refresh,scope:OAUTH_SCOPE})
+      });
+      var t=await r.json();
+      if(!t.error){
+        localStorage.setItem('sp_token',t.access_token);
+        localStorage.setItem('sp_token_exp',Date.now()+t.expires_in*1000);
+        if(t.refresh_token)localStorage.setItem('sp_refresh',t.refresh_token);
+        MSAL_TOKEN=t.access_token;SP_READY=true;
+        console.log('SP token refrescado ✅');return;
+      }
+    }catch(e){console.warn('Refresh falló:',e.message)}
+  }
   throw new Error('login_required');
 }
 
 async function _getToken(){
-  if(!msalInstance)throw new Error('MSAL no inicializado');
-  var accounts=msalInstance.getAllAccounts();
-  try{
-    var resp=await msalInstance.acquireTokenSilent({scopes:SP_SCOPE,account:accounts[0]||null});
-    MSAL_TOKEN=resp.accessToken;
-  }catch(e){
-    var resp2=await msalInstance.acquireTokenPopup({scopes:SP_SCOPE});
-    MSAL_TOKEN=resp2.accessToken;
-  }
+  var exp=parseInt(localStorage.getItem('sp_token_exp')||'0');
+  if(MSAL_TOKEN&&Date.now()<exp-60000)return MSAL_TOKEN;
+  // Token expirado — refrescar o redirigir
+  await spInit();
+  if(!SP_READY){await spLoginYConectar();throw new Error('Redirigiendo a login...');}
   return MSAL_TOKEN;
 }
 
 async function spLoginYConectar(){
-  spEstado('🔑 Iniciando sesión...');
-  try{
-    // Re-inicializar MSAL si es necesario
-    if(!msalInstance){
-      if(typeof msal==='undefined')throw new Error('MSAL.js no cargó. Verifica tu conexión a internet.');
-      msalInstance=new msal.PublicClientApplication(MSAL_CFG);
-      await msalInstance.initialize();
-    }
-    var resp=await msalInstance.acquireTokenPopup({scopes:SP_SCOPE});
-    MSAL_TOKEN=resp.accessToken;SP_READY=true;
-    spEstado('☁️ Conectando...');
-    await spCargar();
-    poblarFiltros();stats();renderT1();renderGestion();
-    spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
-  }catch(e){spEstado('⚠️ '+e.message);alert('Error de autenticación:\n'+e.message)}
+  spEstado('🔑 Redirigiendo a Microsoft...');
+  var verifier=await _pkceVerifier();
+  var challenge=await _pkceChallenge(verifier);
+  var state=Math.random().toString(36).substring(2);
+  localStorage.setItem('oauth_verifier',verifier);
+  localStorage.setItem('oauth_state',state);
+  var url='https://login.microsoftonline.com/'+OAUTH_TENANT+'/oauth2/v2.0/authorize?'+
+    new URLSearchParams({client_id:OAUTH_CLIENT_ID,response_type:'code',redirect_uri:OAUTH_REDIRECT,
+      scope:OAUTH_SCOPE,code_challenge:challenge,code_challenge_method:'S256',state:state,
+      prompt:'select_account'});
+  window.location.href=url;
 }
 
 async function _spGetDigest(){
@@ -451,20 +501,39 @@ async function spCargar(){
   };
   var ok=0;
   for(var k in mapa){try{var it=await spLeerItem(k);if(it&&it.Valor){mapa[k](JSON.parse(it.Valor));ok++}}catch(e){console.warn('spCargar "'+k+'":',e.message)}}
-  console.log('SharePoint MSAL: '+ok+'/'+Object.keys(mapa).length+' claves cargadas');
+  console.log('SharePoint: '+ok+'/'+Object.keys(mapa).length+' claves cargadas');
 }
 
 async function spGuardar(){
   if(!SP_READY||SP_GUARDANDO)return;SP_GUARDANDO=true;
-  var datos={'asg':asg,'reg':reg,'hue':hue,'usr':usr,'TRB':TRB,'ACT':ACT,'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'aprobMasiva':aprobacionMasivaActiva};
-  try{for(var k in datos)await spEscribirItem(k,datos[k])}finally{SP_GUARDANDO=false}
+  try{
+    // Config compartida (sobreescritura normal)
+    var config={'TRB':TRB,'ACT':ACT,'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva};
+    for(var k in config)await spEscribirItem(k,config[k]);
+    // asg — merge: conservar otras fechas de SP, reemplazar solo fechaSel local
+    var itAsg=await spLeerItem('asg');
+    var spAsg=(itAsg&&itAsg.Valor)?JSON.parse(itAsg.Valor):[];
+    var asgMerged=spAsg.filter(function(a){return a.f!==fechaSel}).concat(asg.filter(function(a){return a.f===fechaSel}));
+    await spEscribirItem('asg',asgMerged);
+    // reg — merge por fecha
+    var itReg=await spLeerItem('reg');
+    var spReg=(itReg&&itReg.Valor)?JSON.parse(itReg.Valor):[];
+    var regMerged=spReg.filter(function(r){return r.f!==fechaSel}).concat(reg.filter(function(r){return r.f===fechaSel}));
+    await spEscribirItem('reg',regMerged);
+    // hue — merge por clave de fecha (objeto)
+    var itHue=await spLeerItem('hue');
+    var spHue=(itHue&&itHue.Valor)?JSON.parse(itHue.Valor):{};
+    var hueMerged=Object.assign({},spHue);
+    if(hue[fechaSel]!==undefined)hueMerged[fechaSel]=hue[fechaSel];
+    await spEscribirItem('hue',hueMerged);
+  }finally{SP_GUARDANDO=false}
 }
 
 function spSincronizarManual(){
-  if(!SP_READY){spLoginYConectar();return}
+  if(!SP_READY){spLoginYConectar();return;}
   spEstado('☁️ Sincronizando...');
   spCargar().then(function(){
-    poblarFiltros();stats();renderT1();
+    poblarFiltros();stats();renderT1();renderGestion();
     var a=document.querySelector('.tc.active');
     if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
     spEstado('☁️ Sincronizado '+new Date().toLocaleTimeString(),true);
