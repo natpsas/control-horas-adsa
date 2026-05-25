@@ -228,7 +228,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button id="waCopy" class="btn btn-p" onclick="copiarWA()" style="display:none;margin-top:6px">📋 Copiar</button></div>
 <div class="card"><h2>Exportar</h2>
 <div style="display:flex;gap:8px;flex-wrap:wrap">
-<button class="btn btn-p" onclick="expCSV()">📥 CSV</button>
+<button class="btn btn-p" onclick="expCSV()">📥 Excel</button>
 <button class="btn btn-s" onclick="expJSON()">💾 JSON</button>
 <button class="btn btn-i" onclick="impJSON()">📂 Importar JSON</button>
 <button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar Fecha</button>
@@ -840,12 +840,49 @@ function renderT1(){
   // Precarga manual con boton
   var byA={};list.forEach(function(t){if(!byA[t.area])byA[t.area]=[];byA[t.area].push(t)});
   var tot=TRB.filter(function(t){return t.activo}).length;
-  var seen={};asg.forEach(function(a){if(a.f===d)seen[a.w]=1});var rep=Object.keys(seen).length;
-  var h='<div class="sumbox"><b>Fecha: '+d+'</b> | Activos: <b>'+tot+'</b> | Reportados: <b>'+rep+'</b> | Pend: <b style="color:'+(tot-rep>0?'#c53030':'#276749')+'">'+(tot-rep)+'</b></div>';
+  // Contadores por estado real del flujo
+  var conAsg={};asg.filter(function(a){return a.f===d}).forEach(function(a){conAsg[a.w]=1;});
+  var conReg={};reg.filter(function(r){return r.f===d}).forEach(function(r){conReg[r.w]=1;});
+  var aprobados=0,consol=0,asignados=0,inasistencias=0,sinDatos=0;
+  TRB.filter(function(t){return t.activo}).forEach(function(t){
+    var esNA=asg.find(function(a){return a.w===t.codigo&&a.f===d&&a.na});
+    if(esNA){inasistencias++;return;}
+    var regsT=reg.filter(function(r){return r.w===t.codigo&&r.f===d});
+    if(regsT.length>0){
+      if(regsT.every(function(r){return r.st==='aprobado'}))aprobados++;
+      else consol++;
+    }else if(conAsg[t.codigo]){
+      asignados++;
+    }else{
+      sinDatos++;
+    }
+  });
+  var h='<div class="sumbox" style="display:flex;flex-wrap:wrap;gap:12px;align-items:center">';
+  h+='<span><b>'+d+'</b></span>';
+  h+='<span>Activos: <b>'+tot+'</b></span>';
+  h+='<span style="color:#276749">✅ Aprobados: <b>'+aprobados+'</b></span>';
+  if(consol>0)h+='<span style="color:#b45309">⏳ Consolidados: <b>'+consol+'</b></span>';
+  if(asignados>0)h+='<span style="color:#2b6cb0">📋 Asignados: <b>'+asignados+'</b></span>';
+  if(inasistencias>0)h+='<span style="color:#9a3412">🚫 Inasistencias: <b>'+inasistencias+'</b></span>';
+  if(sinDatos>0)h+='<span style="color:#c53030;font-weight:700">⚠️ Sin datos: <b>'+sinDatos+'</b></span>';
+  h+='</div>';
   for(var area in byA){
     var ws=byA[area],co=COL[area]||'#718096',ic=ICO[area]||'';
-    var repA=0;ws.forEach(function(t){if(asg.find(function(a){return a.w===t.codigo&&a.f===d}))repA++});
-    h+='<div class="area-hdr" style="background:linear-gradient(135deg,'+co+','+co+'dd)"><div><b style="font-size:16px;color:#fff">'+ic+' '+area+'</b></div><div style="text-align:right;font-size:11px;color:#fff"><b style="font-size:18px">'+ws.length+'</b><br>'+repA+'/'+ws.length+'</div></div>';
+    var aprA=0,consolA=0,naA=0,sinA=0;
+    ws.forEach(function(t){
+      var esNA2=asg.find(function(a){return a.w===t.codigo&&a.f===d&&a.na});
+      if(esNA2){naA++;return;}
+      var regsA=reg.filter(function(r){return r.w===t.codigo&&r.f===d});
+      if(regsA.length>0){if(regsA.every(function(r){return r.st==='aprobado'}))aprA++;else consolA++;}
+      else if(asg.find(function(a){return a.w===t.codigo&&a.f===d}))consolA++;
+      else sinA++;
+    });
+    var areaInfo='';
+    if(aprA>0)areaInfo+='<span style="color:#9ae6b4">✅'+aprA+'</span> ';
+    if(consolA>0)areaInfo+='<span style="color:#fefcbf">⏳'+consolA+'</span> ';
+    if(naA>0)areaInfo+='<span style="color:#fed7aa">🚫'+naA+'</span> ';
+    if(sinA>0)areaInfo+='<span style="color:#feb2b2">⚠️'+sinA+'</span>';
+    h+='<div class="area-hdr" style="background:linear-gradient(135deg,'+co+','+co+'dd)"><div><b style="font-size:16px;color:#fff">'+ic+' '+area+'</b></div><div style="text-align:right;font-size:11px;color:#fff"><b style="font-size:18px">'+ws.length+'</b><br>'+areaInfo+'</div></div>';
     ws.forEach(function(t){
       var ex=asg.filter(function(a){return a.w===t.codigo&&a.f===d&&!a.na});
       var na=asg.find(function(a){return a.w===t.codigo&&a.f===d&&a.na});var isNA=!!na;
@@ -1203,6 +1240,8 @@ function renderT2(){
   var fltPend=document.getElementById('t2FltPend')?document.getElementById('t2FltPend').checked:false;
   var wrks=asg.filter(function(a){return a.f===d&&!a.na});
   var codesSet={};wrks.forEach(function(a){codesSet[a.w]=1});
+  // Incluir también trabajadores que tienen reg pero perdieron su asg
+  reg.filter(function(r){return r.f===d}).forEach(function(r){codesSet[r.w]=1;});
   // Ordenar trabajadores alfab\u00e9ticamente
   var codes=Object.keys(codesSet).sort(function(a,b){var ta=TRB.find(function(t){return t.codigo===a});var tb=TRB.find(function(t){return t.codigo===b});return (ta?ta.nombre:'').localeCompare(tb?tb.nombre:'')});
   // Aplicar filtro de b\u00fasqueda
@@ -1231,7 +1270,9 @@ function renderT2(){
       h+='</div><button class="btn btn-i btn-sm" onclick="reintegrar(\''+a.w+'\')">Reintegrar</button></div>'});h+='</div>'}
 
   // PERSONAL SIN DATA (activos sin asignacion ni inasistencia)
-  var todosReportados={};asg.forEach(function(a){if(a.f===d)todosReportados[a.w]=1});
+  var todosReportados={};
+  asg.forEach(function(a){if(a.f===d)todosReportados[a.w]=1});
+  reg.forEach(function(r){if(r.f===d)todosReportados[r.w]=1;});
   var sinData=TRB.filter(function(t){return t.activo&&!todosReportados[t.codigo]});
   if(sinData.length>0){
     h+='<div style="background:#eff6ff;border:2px solid #93c5fd;border-radius:9px;padding:12px;margin-bottom:14px"><h3 style="color:#1e40af;margin-bottom:8px;font-size:14px">\u2753 Sin reporte ('+sinData.length+')</h3>';
@@ -1736,11 +1777,79 @@ function genWA(){
 }
 function copiarWA(){var ta=document.getElementById('waText');ta.select();navigator.clipboard.writeText(ta.value).then(function(){toast('✅ Copiado al portapapeles')}).catch(function(){document.execCommand('copy');toast('✅ Copiado al portapapeles')})}
 function expCSV(){
-  var csv='Fecha,Codigo,Trabajador,Area,Estado,Unidad,Categoria,SubCategoria,Tipo,H_Asig,H_Reg,Rend,Indicador,H_Huella,Modulos,Motivo,Referencia,Obs,Aprobacion,Aprobador\n';
-  reg.forEach(function(r){var act=ACT.find(function(a){return a.id===r.act});csv+=r.f+',"'+r.w+'","'+r.n+'","'+r.ar+'",PRESENTE,'+r.uni+',"'+(r.cat||'')+'","'+(r.sub||'')+'",'+r.tp+','+r.h+','+r.hr.toFixed(2)+','+(r.rend||'')+',"'+(r.ind||'')+'",'+(r.hhu||'')+',"'+(r.mods||[]).join(';')+'",,"'+(r.ref||'')+'","'+(r.obs||'').replace(/"/g,'""')+'",'+r.st+','+(act?act.aprobador:'')+'\n'});
-  asg.filter(function(a){return a.na}).forEach(function(a){var trb=TRB.find(function(t){return t.codigo===a.w});csv+=a.f+',"'+a.w+'","'+(trb?trb.nombre:'')+'","'+(trb?trb.area:'')+'",NO_ASISTIO,,,,,0,,,,,,'+(a.mt||'')+',,\n'});
-  if(!reg.length&&!asg.filter(function(a){return a.na}).length){alert('Sin datos');return}
-  var b=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='registros-'+fechaSel+'.csv';l.click();
+  var inas=asg.filter(function(a){return a.na});
+  if(!reg.length&&!inas.length){alert('Sin datos para exportar');return;}
+  var wb=XLSX.utils.book_new();
+
+  // === HOJA 1: REGISTROS ===
+  var cols1=['Fecha','C\u00f3digo','Trabajador','\u00c1rea','Estado','Unidad','Categor\u00eda','Sub Categor\u00eda','Tipo','H. Asig','H. Reg','Rendimiento','Indicador','H. Huellero','Entrada','Salida','M\u00f3dulos','Referencia','Observaciones','Aprobaci\u00f3n','Aprobador'];
+  var rows1=[cols1];
+  reg.forEach(function(r){
+    var act=ACT.find(function(a){return a.id===r.act});
+    rows1.push([
+      r.f, r.w, r.n, r.ar, 'PRESENTE',
+      r.uni, r.cat||'', r.sub||'', r.tp,
+      r.h, parseFloat(r.hr.toFixed(2)),
+      r.rend!==null&&r.rend!==undefined?r.rend:'',
+      indLabel(r.ind||''),
+      r.hhu||'', r.ehu||'', r.shu||'',
+      (r.mods||[]).join(', '),
+      r.ref||'', r.obs||'',
+      r.st, act?act.aprobador:''
+    ]);
+  });
+  var ws1=XLSX.utils.aoa_to_sheet(rows1);
+  ws1['!cols']=[
+    {wch:12},{wch:10},{wch:24},{wch:18},{wch:11},
+    {wch:10},{wch:22},{wch:26},{wch:8},
+    {wch:8},{wch:8},{wch:12},{wch:14},
+    {wch:11},{wch:8},{wch:8},
+    {wch:32},{wch:16},{wch:28},
+    {wch:12},{wch:16}
+  ];
+  // Congelar fila de encabezado
+  ws1['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft'};
+  XLSX.utils.book_append_sheet(wb,ws1,'Registros');
+
+  // === HOJA 2: INASISTENCIAS ===
+  var cols2=['Fecha','C\u00f3digo','Trabajador','\u00c1rea','Motivo'];
+  var rows2=[cols2];
+  inas.forEach(function(a){
+    var trb=TRB.find(function(t){return t.codigo===a.w});
+    rows2.push([a.f, a.w, trb?trb.nombre:'', trb?trb.area:'', (a.mt||'').replace(/_/g,' ')]);
+  });
+  var ws2=XLSX.utils.aoa_to_sheet(rows2);
+  ws2['!cols']=[{wch:12},{wch:10},{wch:24},{wch:18},{wch:18}];
+  ws2['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft'};
+  XLSX.utils.book_append_sheet(wb,ws2,'Inasistencias');
+
+  // === HOJA 3: RESUMEN ===
+  var aprobados=reg.filter(function(r){return r.st==='aprobado'});
+  var pendientes=reg.filter(function(r){return r.st==='pendiente'});
+  var rechazados=reg.filter(function(r){return r.st==='rechazado'});
+  var hNorm=0,hExt=0;
+  reg.forEach(function(r){if(r.tp!=='EXTRAS')hNorm+=r.hr;else hExt+=r.hr;});
+  var rows3=[
+    ['Resumen de Exportaci\u00f3n',''],
+    ['Generado',new Date().toLocaleString()],
+    ['Fecha filtro',fechaSel||'Todas'],
+    ['',''],
+    ['Total registros',reg.length],
+    ['  Aprobados',aprobados.length],
+    ['  Pendientes',pendientes.length],
+    ['  Rechazados',rechazados.length],
+    ['Inasistencias',inas.length],
+    ['',''],
+    ['H. Normales',parseFloat(hNorm.toFixed(2))],
+    ['H. Extras',parseFloat(hExt.toFixed(2))],
+    ['H. Total',parseFloat((hNorm+hExt).toFixed(2))],
+  ];
+  var ws3=XLSX.utils.aoa_to_sheet(rows3);
+  ws3['!cols']=[{wch:20},{wch:20}];
+  XLSX.utils.book_append_sheet(wb,ws3,'Resumen');
+
+  XLSX.writeFile(wb,'registros-'+fechaSel+'.xlsx');
+  toast('\u2705 Excel exportado correctamente');
 }
 function expJSON(){var data={fecha:new Date().toISOString(),asg:asg,reg:reg,hue:hue,TRB:TRB,ACT:ACT,MOD:MOD,UNI:UNI,CARGOS:CARGOS,usr:usr};var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='backup-'+fechaSel+'.json';l.click()}
 function impJSON(){document.getElementById('impFile').click()}
