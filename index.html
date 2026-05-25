@@ -52,6 +52,30 @@ header h1{font-size:22px}header p{opacity:.9;font-size:12px}
 .toast.t-ok{background:#276749;border-left:4px solid #48bb78}
 .toast.t-info{background:#2b4c8c;border-left:4px solid #63b3ed}
 .toast.t-warn{background:#744210;border-left:4px solid #f6ad55}
+/* Calendario T4 */
+.cal4-wrap{position:relative;display:inline-block}
+.cal4-btn{display:flex;align-items:center;gap:6px;padding:6px 10px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;background:white;cursor:pointer;white-space:nowrap;color:#2d3748}
+.cal4-btn:hover{border-color:#90cdf4;background:#ebf8ff}
+.cal4-btn.active{border-color:#3182ce;background:#ebf8ff;color:#2b6cb0;font-weight:600}
+.cal4-panel{display:none;position:absolute;top:calc(100% + 4px);left:0;z-index:2000;background:white;border:1.5px solid #e2e8f0;border-radius:12px;box-shadow:0 8px 28px rgba(0,0,0,.14);padding:14px;min-width:220px}
+.cal4-panel.open{display:block}
+.cal4-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.cal4-nav b{font-size:12px;color:#2d3748}
+.cal4-nav button{background:none;border:1px solid #e2e8f0;border-radius:5px;font-size:14px;cursor:pointer;padding:1px 7px;color:#4a5568;line-height:1.4}
+.cal4-nav button:hover{background:#ebf8ff;border-color:#90cdf4}
+.cal4-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:2px;margin-bottom:8px}
+.cal4-dow{text-align:center;font-size:9px;font-weight:700;color:#a0aec0;padding:3px 0}
+.cal4-day{text-align:center;font-size:11px;padding:5px 3px;border-radius:6px;cursor:pointer;position:relative;line-height:1;color:#4a5568;min-width:26px}
+.cal4-day:hover{background:#ebf8ff}
+.cal4-day.has-data{font-weight:700;color:#2b6cb0}
+.cal4-day.has-data::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:4px;height:4px;border-radius:50%;background:#4299e1}
+.cal4-day.sel{background:#3182ce!important;color:white!important;font-weight:700}
+.cal4-day.sel::after{background:white!important}
+.cal4-day.other{color:#cbd5e0}
+.cal4-day.other.has-data{color:#90cdf4}
+.cal4-clear{display:block;width:100%;padding:5px;font-size:11px;text-align:center;background:#f7fafc;border:1px solid #e2e8f0;border-radius:6px;cursor:pointer;color:#4a5568}
+.cal4-clear:hover{background:#ebf8ff;color:#2b6cb0}
+.cal4-hoy{box-shadow:inset 0 0 0 1.5px #3182ce}
 .alert{padding:9px 12px;border-radius:7px;margin-bottom:10px;border-left:4px solid;font-size:12px}
 .al-i{background:#e8f4fd;color:#2c5282;border-color:#4299e1}
 .al-w{background:#feebc8;color:#c05621;border-color:#ed8936}
@@ -181,9 +205,10 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <h2 style="margin:0">📊 Reportes</h2>
     <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
-      <select id="t4FltFecha" onchange="renderT4()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">
-        <option value="">Todas las fechas</option>
-      </select>
+      <div class="cal4-wrap">
+        <button id="cal4Btn" class="cal4-btn" onclick="toggleCal4()">📅 <span id="cal4Lbl">Todas las fechas</span> <span style="color:#a0aec0;font-size:10px">▼</span></button>
+        <div id="cal4Panel" class="cal4-panel"></div>
+      </div>
       <select id="t4FltArea" onchange="renderT4()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">
         <option value="">Todas las áreas</option>
       </select>
@@ -277,6 +302,7 @@ var ICO={'COSECHA':'\uD83C\uDF47','EMPACADO':'\uD83D\uDCE6','TAMIZADO':'\uD83D\u
 var COL={'COSECHA':'#dc2626','EMPACADO':'#ea580c','TAMIZADO':'#d97706','SIEMBRA Y PODA':'#16a34a','MANTENIMIENTO':'#0891b2','VIVERO':'#059669','SUSTRATO':'#7c3aed','GUADA\u00d1A':'#65a30d','CAPATAZ':'#1e40af','TECNOLOGIA':'#6366f1'};
 var asg=[],reg=[],hue={},usr=[];
 var fechaSel='',usuarioLogueado=null,limpiando=false;
+var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1308,6 +1334,7 @@ function renderT3(){
   var fltSt   =document.getElementById('fltSt')   ?document.getElementById('fltSt').value   :'pendiente';
   var fltCat  =document.getElementById('fltCat')  ?document.getElementById('fltCat').value  :'';
   var fltSub  =document.getElementById('fltSub')  ?document.getElementById('fltSub').value  :'';
+  var fltFecha=document.getElementById('fltFechaT3')?document.getElementById('fltFechaT3').value:'';
   var cargoUsr=getCargoUsuario();
   // Todos los registros visibles para este usuario (sin filtro de estado)
   var visibles=reg.filter(function(r){
@@ -1320,6 +1347,7 @@ function renderT3(){
     var act=ACT.find(function(a){return a.id===r.act});
     var aprobador=act?act.aprobador:'ADMIN';
     if(fltSt&&r.st!==fltSt)return false;
+    if(fltFecha&&r.f!==fltFecha)return false;
     if(fltCargo&&aprobador!==fltCargo)return false;
     if(fltTipo&&r.tp!==fltTipo)return false;
     if(fltCat&&(r.cat||'')!==fltCat)return false;
@@ -1328,8 +1356,12 @@ function renderT3(){
   });
   var pendFiltrados=filtrados.filter(function(r){return r.st==='pendiente';});
   // Opciones dinamicas basadas en todos los visibles
-  var cats=[],subs=[];
-  visibles.forEach(function(r){if(r.cat&&cats.indexOf(r.cat)<0)cats.push(r.cat);});cats.sort();
+  var fechas=[],cats=[],subs=[];
+  visibles.forEach(function(r){
+    if(r.f&&fechas.indexOf(r.f)<0)fechas.push(r.f);
+    if(r.cat&&cats.indexOf(r.cat)<0)cats.push(r.cat);
+  });
+  fechas.sort().reverse();cats.sort();
   visibles.filter(function(r){return !fltCat||r.cat===fltCat;}).forEach(function(r){if(r.sub&&subs.indexOf(r.sub)<0)subs.push(r.sub);});subs.sort();
   var tb=document.getElementById('t3Body');
   // Barra de filtros
@@ -1339,6 +1371,9 @@ function renderT3(){
   fh+='<option value="pendiente" '+(fltSt==='pendiente'?'selected':'')+'>Pendientes</option>';
   fh+='<option value="aprobado" '+(fltSt==='aprobado'?'selected':'')+'>Aprobados</option>';
   fh+='<option value="rechazado" '+(fltSt==='rechazado'?'selected':'')+'>Rechazados</option>';
+  fh+='</select>';
+  fh+='<select id="fltFechaT3" onchange="renderT3()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todas las fechas</option>';
+  fechas.forEach(function(f){fh+='<option value="'+f+'" '+(fltFecha===f?'selected':'')+'>'+f+'</option>'});
   fh+='</select>';
   fh+='<select id="fltCargo" onchange="renderT3()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todos los supervisores</option>';
   CARGOS.forEach(function(c){fh+='<option value="'+c.id+'" '+(fltCargo===c.id?'selected':'')+'>'+c.nombre+'</option>'});
@@ -1457,13 +1492,76 @@ function aprobarMasivo(){
 }
 
 // === TAB 4: REPORTES ===
+// === CALENDARIO T4 ===
+function toggleCal4(){
+  var p=document.getElementById('cal4Panel');
+  if(p.classList.contains('open')){p.classList.remove('open');return;}
+  if(calFechaT4){var pts=calFechaT4.split('-');calAnioT4=parseInt(pts[0]);calMesT4=parseInt(pts[1])-1;}
+  renderCal4();p.classList.add('open');
+  setTimeout(function(){document.addEventListener('click',cerrarCal4,{once:true});},0);
+}
+function cerrarCal4(e){
+  var p=document.getElementById('cal4Panel');
+  if(p&&!p.contains(e.target)&&e.target.id!=='cal4Btn'&&!document.getElementById('cal4Btn').contains(e.target)){
+    p.classList.remove('open');
+  }else{setTimeout(function(){document.addEventListener('click',cerrarCal4,{once:true});},0);}
+}
+function navCal4(d){
+  calMesT4+=d;if(calMesT4>11){calMesT4=0;calAnioT4++;}if(calMesT4<0){calMesT4=11;calAnioT4--;}
+  renderCal4();
+}
+function selCal4(f){
+  calFechaT4=(calFechaT4===f)?'':f;
+  var lbl=document.getElementById('cal4Lbl');if(lbl)lbl.textContent=calFechaT4||'Todas las fechas';
+  var btn=document.getElementById('cal4Btn');if(btn)btn.classList.toggle('active',!!calFechaT4);
+  document.getElementById('cal4Panel').classList.remove('open');
+  renderT4();
+}
+function limpiarCal4(){
+  calFechaT4='';
+  var lbl=document.getElementById('cal4Lbl');if(lbl)lbl.textContent='Todas las fechas';
+  var btn=document.getElementById('cal4Btn');if(btn)btn.classList.remove('active');
+  document.getElementById('cal4Panel').classList.remove('open');
+  renderT4();
+}
+function renderCal4(){
+  var tieneData={};reg.forEach(function(r){if(r.f)tieneData[r.f]=1;});
+  var MESES=['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+  var DIAS=['Lu','Ma','Mi','Ju','Vi','Sá','Do'];
+  var h='<div class="cal4-nav"><button onclick="navCal4(-1)">‹</button><b>'+MESES[calMesT4]+' '+calAnioT4+'</b><button onclick="navCal4(1)">›</button></div>';
+  h+='<div class="cal4-grid">';
+  DIAS.forEach(function(d){h+='<div class="cal4-dow">'+d+'</div>';});
+  var primerDow=new Date(calAnioT4,calMesT4,1).getDay();primerDow=(primerDow+6)%7;// 0=Lun
+  var diasMes=new Date(calAnioT4,calMesT4+1,0).getDate();
+  var diasAnt=new Date(calAnioT4,calMesT4,0).getDate();
+  // Días mes anterior
+  for(var i=0;i<primerDow;i++){
+    var da=diasAnt-primerDow+1+i;
+    var ma=calMesT4===0?12:calMesT4;var ya=calMesT4===0?calAnioT4-1:calAnioT4;
+    var fa=ya+'-'+(ma<10?'0':'')+ma+'-'+(da<10?'0':'')+da;
+    h+='<div class="cal4-day other'+(tieneData[fa]?' has-data':'')+(calFechaT4===fa?' sel':'')+'" onclick="selCal4(\''+fa+'\')">'+da+'</div>';
+  }
+  // Días mes actual
+  for(var d2=1;d2<=diasMes;d2++){
+    var m2=calMesT4+1;var f2=calAnioT4+'-'+(m2<10?'0':'')+m2+'-'+(d2<10?'0':'')+d2;
+    var hoy=f2===new Date().toISOString().substring(0,10);
+    h+='<div class="cal4-day'+(tieneData[f2]?' has-data':'')+(calFechaT4===f2?' sel':'')+(hoy?' cal4-hoy':'')+'" onclick="selCal4(\''+f2+'\')" '+(hoy?'title="Hoy"':'')+'>'+d2+'</div>';
+  }
+  // Días mes siguiente
+  var resto=(7-(primerDow+diasMes)%7)%7;
+  for(var k=1;k<=resto;k++){
+    var ms=calMesT4+2>12?1:calMesT4+2;var ys=calMesT4+2>12?calAnioT4+1:calAnioT4;
+    var fs=ys+'-'+(ms<10?'0':'')+ms+'-'+(k<10?'0':'')+k;
+    h+='<div class="cal4-day other'+(tieneData[fs]?' has-data':'')+(calFechaT4===fs?' sel':'')+'" onclick="selCal4(\''+fs+'\')">'+k+'</div>';
+  }
+  h+='</div>';
+  h+='<button class="cal4-clear" onclick="limpiarCal4()">✕ Todas las fechas</button>';
+  document.getElementById('cal4Panel').innerHTML=h;
+}
 function renderT4(){
-  // Poblar filtros de fecha y área sin perder selección
-  var selF=document.getElementById('t4FltFecha'),selA=document.getElementById('t4FltArea'),selSt=document.getElementById('t4FltSt');
-  var fltF=selF?selF.value:'',fltA=selA?selA.value:'',fltSt=selSt?selSt.value:'';
-  if(selF){var fechas=[];reg.forEach(function(r){if(fechas.indexOf(r.f)<0)fechas.push(r.f)});fechas.sort().reverse();
-    var curF=selF.value;selF.innerHTML='<option value="">Todas las fechas</option>';
-    fechas.forEach(function(f){selF.innerHTML+='<option value="'+f+'" '+(curF===f?'selected':'')+'>'+f+'</option>'});fltF=selF.value;}
+  var fltF=calFechaT4;
+  var selA=document.getElementById('t4FltArea'),selSt=document.getElementById('t4FltSt');
+  var fltA=selA?selA.value:'',fltSt=selSt?selSt.value:'';
   if(selA){var areas=[];reg.forEach(function(r){if(r.ar&&areas.indexOf(r.ar)<0)areas.push(r.ar)});areas.sort();
     var curA=selA.value;selA.innerHTML='<option value="">Todas las áreas</option>';
     areas.forEach(function(a){selA.innerHTML+='<option value="'+a+'" '+(curA===a?'selected':'')+'>'+a+'</option>'});fltA=selA.value;}
@@ -1529,20 +1627,62 @@ function renderT4(){
   // --- Detalle por trabajador ---
   var byTrb={};
   base.forEach(function(r){
-    if(!byTrb[r.w])byTrb[r.w]={n:r.n,ar:r.ar,hN:0,hE:0,acts:[],st:{}};
+    if(!byTrb[r.w])byTrb[r.w]={n:r.n,ar:r.ar,hN:0,hE:0,acts:[],st:{},hhuDates:{},ehu:'',shu:''};
     var b=byTrb[r.w];
     if(r.tp!=='EXTRAS')b.hN+=r.hr;else b.hE+=r.hr;
     if(b.acts.indexOf(r.sub)<0&&r.sub)b.acts.push(r.sub);
     b.st[r.st]=(b.st[r.st]||0)+1;
+    // Acumular huellero por fecha (evitar doble conteo en multi-actividad)
+    if(r.hhu&&!b.hhuDates[r.f]){
+      b.hhuDates[r.f]=r.hhu;
+      var eVal=r.ehu||'';var sVal=r.shu||'';
+      if(!b.ehu)b.ehu=eVal;else if(b.ehu!==eVal&&eVal)b.ehu='múlt.';
+      if(!b.shu)b.shu=sVal;else if(b.shu!==sVal&&sVal)b.shu='múlt.';
+    }
   });
   html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Por Trabajador</h3>';
   html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
-  html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trabajador</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Área</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Norm</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Extra</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Total</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Actividades</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Estado</th></tr></thead><tbody>';
-  Object.keys(byTrb).sort(function(a,b){return byTrb[a].n.localeCompare(byTrb[b].n)}).forEach(function(w){var b=byTrb[w];
-    var stBadge='';if(b.st.aprobado)stBadge+='<span style="background:#c6f6d5;color:#276749;border-radius:4px;padding:1px 5px;font-size:10px;margin-right:2px">✓'+b.st.aprobado+'</span>';
+  html+='<thead><tr style="background:#f7fafc">';
+  html+='<th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trabajador</th>';
+  html+='<th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Área</th>';
+  html+='<th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Norm</th>';
+  html+='<th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Extra</th>';
+  html+='<th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Total</th>';
+  html+='<th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0;border-left:2px solid #bee3f8">H.Huellero</th>';
+  html+='<th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Entrada</th>';
+  html+='<th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Salida</th>';
+  html+='<th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Dif.</th>';
+  html+='<th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Actividades</th>';
+  html+='<th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Estado</th>';
+  html+='</tr></thead><tbody>';
+  Object.keys(byTrb).sort(function(a,b){return byTrb[a].n.localeCompare(byTrb[b].n)}).forEach(function(w){
+    var b=byTrb[w];
+    var totalH=b.hN+b.hE;
+    var totalHhu=0;Object.keys(b.hhuDates).forEach(function(f){totalHhu+=b.hhuDates[f]});
+    var tieneHhu=Object.keys(b.hhuDates).length>0;
+    var dif=tieneHhu?parseFloat((totalH-totalHhu).toFixed(2)):null;
+    var difStr=dif===null?'<span style="color:#a0aec0">-</span>'
+      :dif>0?'<span style="color:#dc2626;font-weight:700">+'+dif.toFixed(1)+'h ⚠️</span>'
+      :dif<0?'<span style="color:#276749">'+dif.toFixed(1)+'h</span>'
+      :'<span style="color:#718096">0h ✓</span>';
+    var stBadge='';
+    if(b.st.aprobado)stBadge+='<span style="background:#c6f6d5;color:#276749;border-radius:4px;padding:1px 5px;font-size:10px;margin-right:2px">✓'+b.st.aprobado+'</span>';
     if(b.st.pendiente)stBadge+='<span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;font-size:10px;margin-right:2px">⏳'+b.st.pendiente+'</span>';
     if(b.st.rechazado)stBadge+='<span style="background:#fecaca;color:#991b1b;border-radius:4px;padding:1px 5px;font-size:10px">✗'+b.st.rechazado+'</span>';
-    html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-weight:600">'+b.n+'</td><td style="padding:6px 8px;font-size:11px;color:#718096">'+b.ar+'</td><td style="text-align:center;padding:6px 8px">'+b.hN.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+b.hE.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+(b.hN+b.hE).toFixed(1)+'h</td><td style="padding:6px 8px;font-size:11px;color:#4a5568">'+b.acts.join(', ')+'</td><td style="text-align:center;padding:6px 8px">'+stBadge+'</td></tr>';
+    var rowBg=dif!==null&&dif>0?'background:#fff5f5':'';
+    html+='<tr style="border-bottom:1px solid #f0f4f8;'+rowBg+'">';
+    html+='<td style="padding:6px 8px;font-weight:600">'+b.n+'</td>';
+    html+='<td style="padding:6px 8px;font-size:11px;color:#718096">'+b.ar+'</td>';
+    html+='<td style="text-align:center;padding:6px 8px">'+b.hN.toFixed(1)+'h</td>';
+    html+='<td style="text-align:center;padding:6px 8px">'+b.hE.toFixed(1)+'h</td>';
+    html+='<td style="text-align:center;padding:6px 8px;font-weight:700">'+totalH.toFixed(1)+'h</td>';
+    html+='<td style="text-align:center;padding:6px 8px;border-left:2px solid #bee3f8">'+(tieneHhu?totalHhu.toFixed(1)+'h':'<span style="color:#a0aec0">Sin datos</span>')+'</td>';
+    html+='<td style="text-align:center;padding:6px 8px;font-size:11px">'+(b.ehu||'<span style="color:#a0aec0">-</span>')+'</td>';
+    html+='<td style="text-align:center;padding:6px 8px;font-size:11px">'+(b.shu||'<span style="color:#a0aec0">-</span>')+'</td>';
+    html+='<td style="text-align:center;padding:6px 8px">'+difStr+'</td>';
+    html+='<td style="padding:6px 8px;font-size:11px;color:#4a5568">'+b.acts.join(', ')+'</td>';
+    html+='<td style="text-align:center;padding:6px 8px">'+stBadge+'</td>';
+    html+='</tr>';
   });
   html+='</tbody></table></div>';
   document.getElementById('t4Sum').innerHTML=html;
