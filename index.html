@@ -226,16 +226,44 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button class="btn btn-s" onclick="genWA()" style="margin-bottom:8px">📱 Generar</button>
 <textarea id="waText" style="width:100%;height:180px;border:2px solid #e2e8f0;border-radius:7px;padding:8px;font-family:monospace;font-size:11px;display:none;resize:vertical" readonly></textarea>
 <button id="waCopy" class="btn btn-p" onclick="copiarWA()" style="display:none;margin-top:6px">📋 Copiar</button></div>
-<div class="card"><h2>Exportar</h2>
-<div style="display:flex;gap:8px;flex-wrap:wrap">
-<button class="btn btn-p" onclick="expCSV()">📥 Excel</button>
-<button class="btn btn-s" onclick="expJSON()">💾 JSON</button>
-<button class="btn btn-i" onclick="impJSON()">📂 Importar JSON</button>
-<button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar Fecha</button>
-<button class="btn btn-d" onclick="limpiarTodosRegistros()" style="background:#c05621">🗑️ Borrar Todos los Registros</button>
-<label id="lblAprobMasiva" style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="chkAprobMasiva" checked onchange="aprobacionMasivaActiva=this.checked;guardarLS()"> Aprob. masiva</label>
-<button class="btn btn-d" onclick="limpiarTodo()" style="background:#991b1b">💣 Reset Total</button>
-</div><input type="file" id="impFile" accept=".json" style="display:none" onchange="doImpJSON(event)"></div></div>
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+    <h2 style="margin:0">Exportar / Archivar</h2>
+    <div id="lsIndicador" style="font-size:11px;color:#718096"></div>
+  </div>
+  <!-- Selector de rango de fechas -->
+  <div style="background:#f7fafc;border:1.5px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px">
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:8px">
+      <b style="font-size:12px">Rango:</b>
+      <button class="btn btn-sm" style="background:#ebf8ff;color:#2b6cb0;font-size:11px" onclick="setRangoExp('hoy')">Hoy</button>
+      <button class="btn btn-sm" style="background:#ebf8ff;color:#2b6cb0;font-size:11px" onclick="setRangoExp('semana')">Esta semana</button>
+      <button class="btn btn-sm" style="background:#ebf8ff;color:#2b6cb0;font-size:11px" onclick="setRangoExp('mes')">Este mes</button>
+      <button class="btn btn-sm" style="background:#ebf8ff;color:#2b6cb0;font-size:11px" onclick="setRangoExp('todo')">Todo</button>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;align-items:center">
+      <label style="font-size:12px">Desde:</label>
+      <input type="date" id="expDesde" style="padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px" onchange="updExpInfo()">
+      <label style="font-size:12px">Hasta:</label>
+      <input type="date" id="expHasta" style="padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px" onchange="updExpInfo()">
+      <span id="expInfo" style="font-size:11px;color:#718096"></span>
+    </div>
+  </div>
+  <!-- Botones de acción -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
+    <button class="btn btn-p" onclick="expCSV()">📥 Exportar Excel</button>
+    <button class="btn btn-d" onclick="archivarPeriodo()" style="background:#744210;border-color:#744210" title="Exporta el rango a Excel y luego lo elimina de memoria">📦 Archivar y limpiar</button>
+  </div>
+  <hr style="border:none;border-top:1px solid #e2e8f0;margin:10px 0">
+  <!-- Otras opciones -->
+  <div style="display:flex;gap:8px;flex-wrap:wrap">
+    <button class="btn btn-s" onclick="expJSON()">💾 Backup JSON</button>
+    <button class="btn btn-i" onclick="impJSON()">📂 Importar JSON</button>
+    <button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar fecha actual</button>
+    <label id="lblAprobMasiva" style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="chkAprobMasiva" checked onchange="aprobacionMasivaActiva=this.checked;guardarLS()"> Aprob. masiva</label>
+    <button class="btn btn-d" onclick="limpiarTodo()" style="background:#991b1b">💣 Reset Total</button>
+  </div>
+  <input type="file" id="impFile" accept=".json" style="display:none" onchange="doImpJSON(event)">
+</div></div>
 
 <div id="t5" class="tc">
 <div class="alert al-i"><b>Gestión</b> — Tablas maestras. Todo ampliable con activo/inactivo.</div>
@@ -735,7 +763,7 @@ function swTab(id,btn){
   document.querySelectorAll('.tc').forEach(function(t){t.classList.remove('active')});
   document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active')});
   document.getElementById(id).classList.add('active');btn.classList.add('active');
-  if(id==='t2')renderT2();if(id==='t3')renderT3();if(id==='t4')renderT4();if(id==='t5')renderGestion();
+  if(id==='t2')renderT2();if(id==='t3')renderT3();if(id==='t4'){renderT4();setRangoExp('todo');updExpInfo();}if(id==='t5')renderGestion();
 }
 function poblarFiltros(){
   var areas=[],unis=[];
@@ -1776,80 +1804,105 @@ function genWA(){
   txt+='\n'+new Date().toLocaleString();document.getElementById('waText').value=txt;document.getElementById('waText').style.display='block';document.getElementById('waCopy').style.display='inline-block';
 }
 function copiarWA(){var ta=document.getElementById('waText');ta.select();navigator.clipboard.writeText(ta.value).then(function(){toast('✅ Copiado al portapapeles')}).catch(function(){document.execCommand('copy');toast('✅ Copiado al portapapeles')})}
-function expCSV(){
-  var inas=asg.filter(function(a){return a.na});
-  if(!reg.length&&!inas.length){alert('Sin datos para exportar');return;}
+// === EXPORTAR / ARCHIVAR ===
+function getExpRango(){
+  var desde=document.getElementById('expDesde')?document.getElementById('expDesde').value:'';
+  var hasta=document.getElementById('expHasta')?document.getElementById('expHasta').value:'';
+  return{desde:desde,hasta:hasta};
+}
+function setRangoExp(tipo){
+  var hoy=new Date();
+  function fmt(d){return d.toISOString().substring(0,10);}
+  var desde,hasta=fmt(hoy);
+  if(tipo==='hoy'){desde=fmt(hoy);}
+  else if(tipo==='semana'){var lun=new Date(hoy);lun.setDate(hoy.getDate()-((hoy.getDay()+6)%7));desde=fmt(lun);}
+  else if(tipo==='mes'){desde=hoy.getFullYear()+'-'+(hoy.getMonth()<9?'0':'')+(hoy.getMonth()+1)+'-01';}
+  else{// todo
+    var fechas=reg.map(function(r){return r.f}).concat(asg.filter(function(a){return a.na}).map(function(a){return a.f}));
+    fechas.sort();desde=fechas[0]||fmt(hoy);hasta=fechas[fechas.length-1]||fmt(hoy);
+  }
+  document.getElementById('expDesde').value=desde;
+  document.getElementById('expHasta').value=hasta;
+  updExpInfo();
+}
+function updExpInfo(){
+  var r=getExpRango();
+  var regF=reg.filter(function(x){return(!r.desde||x.f>=r.desde)&&(!r.hasta||x.f<=r.hasta)});
+  var inaF=asg.filter(function(a){return a.na&&(!r.desde||a.f>=r.desde)&&(!r.hasta||a.f<=r.hasta)});
+  var el=document.getElementById('expInfo');
+  if(el)el.textContent=regF.length+' registros · '+inaF.length+' inasistencias';
+  // Indicador localStorage
+  updLSIndicador();
+}
+function updLSIndicador(){
+  try{
+    var total=0;for(var k in localStorage){if(localStorage.hasOwnProperty(k))total+=localStorage[k].length;}
+    var kb=Math.round(total*2/1024);var pct=Math.round(kb/5120*100);
+    var color=pct>80?'#c53030':pct>50?'#b45309':'#276749';
+    var el=document.getElementById('lsIndicador');
+    if(el)el.innerHTML='💾 Almacenamiento: <b style="color:'+color+'">'+kb+' KB / 5120 KB ('+pct+'%)</b>'+(pct>80?' ⚠️ Considera archivar':'');
+  }catch(e){}
+}
+function filtrarParaExport(){
+  var r=getExpRango();
+  var regF=reg.filter(function(x){return(!r.desde||x.f>=r.desde)&&(!r.hasta||x.f<=r.hasta)});
+  var inaF=asg.filter(function(a){return a.na&&(!r.desde||a.f>=r.desde)&&(!r.hasta||a.f<=r.hasta)});
+  return{reg:regF,inas:inaF,desde:r.desde,hasta:r.hasta};
+}
+function buildXLSX(regF,inaF,sufijo){
   var wb=XLSX.utils.book_new();
-
-  // === HOJA 1: REGISTROS ===
-  var cols1=['Fecha','C\u00f3digo','Trabajador','\u00c1rea','Estado','Unidad','Categor\u00eda','Sub Categor\u00eda','Tipo','H. Asig','H. Reg','Rendimiento','Indicador','H. Huellero','Entrada','Salida','M\u00f3dulos','Referencia','Observaciones','Aprobaci\u00f3n','Aprobador'];
+  // Hoja Registros
+  var cols1=['Fecha','Código','Trabajador','Área','Estado','Unidad','Categoría','Sub Categoría','Tipo','H. Asig','H. Reg','Rendimiento','Indicador','H. Huellero','Entrada','Salida','Módulos','Referencia','Observaciones','Aprobación','Aprobador'];
   var rows1=[cols1];
-  reg.forEach(function(r){
+  regF.forEach(function(r){
     var act=ACT.find(function(a){return a.id===r.act});
-    rows1.push([
-      r.f, r.w, r.n, r.ar, 'PRESENTE',
-      r.uni, r.cat||'', r.sub||'', r.tp,
-      r.h, parseFloat(r.hr.toFixed(2)),
-      r.rend!==null&&r.rend!==undefined?r.rend:'',
-      indLabel(r.ind||''),
-      r.hhu||'', r.ehu||'', r.shu||'',
-      (r.mods||[]).join(', '),
-      r.ref||'', r.obs||'',
-      r.st, act?act.aprobador:''
-    ]);
+    rows1.push([r.f,r.w,r.n,r.ar,'PRESENTE',r.uni,r.cat||'',r.sub||'',r.tp,r.h,parseFloat(r.hr.toFixed(2)),r.rend!==null&&r.rend!==undefined?r.rend:'',indLabel(r.ind||''),r.hhu||'',r.ehu||'',r.shu||'',(r.mods||[]).join(', '),r.ref||'',r.obs||'',r.st,act?act.aprobador:'']);
   });
   var ws1=XLSX.utils.aoa_to_sheet(rows1);
-  ws1['!cols']=[
-    {wch:12},{wch:10},{wch:24},{wch:18},{wch:11},
-    {wch:10},{wch:22},{wch:26},{wch:8},
-    {wch:8},{wch:8},{wch:12},{wch:14},
-    {wch:11},{wch:8},{wch:8},
-    {wch:32},{wch:16},{wch:28},
-    {wch:12},{wch:16}
-  ];
-  // Congelar fila de encabezado
+  ws1['!cols']=[{wch:12},{wch:10},{wch:24},{wch:18},{wch:11},{wch:10},{wch:22},{wch:26},{wch:8},{wch:8},{wch:8},{wch:12},{wch:14},{wch:11},{wch:8},{wch:8},{wch:32},{wch:16},{wch:28},{wch:12},{wch:16}];
   ws1['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft'};
   XLSX.utils.book_append_sheet(wb,ws1,'Registros');
-
-  // === HOJA 2: INASISTENCIAS ===
-  var cols2=['Fecha','C\u00f3digo','Trabajador','\u00c1rea','Motivo'];
-  var rows2=[cols2];
-  inas.forEach(function(a){
-    var trb=TRB.find(function(t){return t.codigo===a.w});
-    rows2.push([a.f, a.w, trb?trb.nombre:'', trb?trb.area:'', (a.mt||'').replace(/_/g,' ')]);
-  });
+  // Hoja Inasistencias
+  var rows2=[['Fecha','Código','Trabajador','Área','Motivo']];
+  inaF.forEach(function(a){var trb=TRB.find(function(t){return t.codigo===a.w});rows2.push([a.f,a.w,trb?trb.nombre:'',trb?trb.area:'',(a.mt||'').replace(/_/g,' ')]);});
   var ws2=XLSX.utils.aoa_to_sheet(rows2);
   ws2['!cols']=[{wch:12},{wch:10},{wch:24},{wch:18},{wch:18}];
   ws2['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft'};
   XLSX.utils.book_append_sheet(wb,ws2,'Inasistencias');
-
-  // === HOJA 3: RESUMEN ===
-  var aprobados=reg.filter(function(r){return r.st==='aprobado'});
-  var pendientes=reg.filter(function(r){return r.st==='pendiente'});
-  var rechazados=reg.filter(function(r){return r.st==='rechazado'});
-  var hNorm=0,hExt=0;
-  reg.forEach(function(r){if(r.tp!=='EXTRAS')hNorm+=r.hr;else hExt+=r.hr;});
-  var rows3=[
-    ['Resumen de Exportaci\u00f3n',''],
-    ['Generado',new Date().toLocaleString()],
-    ['Fecha filtro',fechaSel||'Todas'],
-    ['',''],
-    ['Total registros',reg.length],
-    ['  Aprobados',aprobados.length],
-    ['  Pendientes',pendientes.length],
-    ['  Rechazados',rechazados.length],
-    ['Inasistencias',inas.length],
-    ['',''],
-    ['H. Normales',parseFloat(hNorm.toFixed(2))],
-    ['H. Extras',parseFloat(hExt.toFixed(2))],
-    ['H. Total',parseFloat((hNorm+hExt).toFixed(2))],
-  ];
-  var ws3=XLSX.utils.aoa_to_sheet(rows3);
-  ws3['!cols']=[{wch:20},{wch:20}];
+  // Hoja Resumen
+  var ap=regF.filter(function(r){return r.st==='aprobado'});
+  var pend=regF.filter(function(r){return r.st==='pendiente'});
+  var rch=regF.filter(function(r){return r.st==='rechazado'});
+  var hN=0,hE=0;regF.forEach(function(r){if(r.tp!=='EXTRAS')hN+=r.hr;else hE+=r.hr;});
+  var rows3=[['Resumen',''],['Período',sufijo],['Generado',new Date().toLocaleString()],['',''],['Total registros',regF.length],['  Aprobados',ap.length],['  Pendientes',pend.length],['  Rechazados',rch.length],['Inasistencias',inaF.length],['',''],['H. Normales',parseFloat(hN.toFixed(2))],['H. Extras',parseFloat(hE.toFixed(2))],['H. Total',parseFloat((hN+hE).toFixed(2))]];
+  var ws3=XLSX.utils.aoa_to_sheet(rows3);ws3['!cols']=[{wch:20},{wch:20}];
   XLSX.utils.book_append_sheet(wb,ws3,'Resumen');
-
-  XLSX.writeFile(wb,'registros-'+fechaSel+'.xlsx');
-  toast('\u2705 Excel exportado correctamente');
+  return wb;
+}
+function archivarPeriodo(){
+  var f=filtrarParaExport();
+  if(!f.reg.length&&!f.inas.length){alert('Sin datos en el rango seleccionado.');return;}
+  var pendientes=f.reg.filter(function(r){return r.st==='pendiente'});
+  if(pendientes.length>0&&!confirm('Hay '+pendientes.length+' registros PENDIENTES en el rango.\n¿Archivar de todas formas? Se perderán del sistema.'))return;
+  var sufijo=(f.desde||'inicio')+' al '+(f.hasta||'hoy');
+  var wb=buildXLSX(f.reg,f.inas,sufijo);
+  XLSX.writeFile(wb,'archivo-'+f.desde+'-'+f.hasta+'.xlsx');
+  // Eliminar de memoria
+  reg=reg.filter(function(r){return(f.desde&&r.f<f.desde)||(f.hasta&&r.f>f.hasta)});
+  asg=asg.filter(function(a){return!(a.na&&((!f.desde||a.f>=f.desde)&&(!f.hasta||a.f<=f.hasta)))});
+  // Limpiar hue del período
+  if(hue){Object.keys(hue).forEach(function(fecha){if((!f.desde||fecha>=f.desde)&&(!f.hasta||fecha<=f.hasta))delete hue[fecha];});}
+  guardarLS();updExpInfo();
+  toast('📦 Período archivado y eliminado de memoria','info',3500);
+}
+function expCSV(){
+  var f=filtrarParaExport();
+  if(!f.reg.length&&!f.inas.length){alert('Sin datos en el rango seleccionado.');return;}
+  var sufijo=f.desde&&f.hasta&&f.desde===f.hasta?f.desde:(f.desde||'inicio')+' al '+(f.hasta||'hoy');
+  var wb=buildXLSX(f.reg,f.inas,sufijo);
+  var nombre='registros-'+(f.desde&&f.hasta?f.desde+(f.desde!==f.hasta?'_'+f.hasta:''):'todo')+'.xlsx';
+  XLSX.writeFile(wb,nombre);
+  toast('\u2705 Excel exportado ('+f.reg.length+' registros)');
 }
 function expJSON(){var data={fecha:new Date().toISOString(),asg:asg,reg:reg,hue:hue,TRB:TRB,ACT:ACT,MOD:MOD,UNI:UNI,CARGOS:CARGOS,usr:usr};var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='backup-'+fechaSel+'.json';l.click()}
 function impJSON(){document.getElementById('impFile').click()}
