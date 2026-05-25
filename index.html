@@ -739,7 +739,7 @@ async function spCargarRegistros(){
   if(!SP_READY)return;
   try{
     var token=await _getToken();
-    var sel='Id,Title,Fecha,Codigo,Trabajador,Area,Unidad,Categoria,SubCategoria,ActividadId,Tipo,HAsig,HReg,Rendimiento,Indicador,HHuellero,Entrada,Salida,Modulos,Referencia,Observaciones,Estado,FechaConsolid,FechaAprob,MotivoRechazo,AprobadoPor';
+    var sel='Id,Title,Fecha,Codigo,Trabajador,Area,Unidad,Categoria,SubCategoria,ActividadId,TipoHora,HAsig,HReg,Rendimiento,Indicador,HHuellero,Entrada,Salida,Modulos,Referencia,Observaciones,Estado,FechaConsolid,FechaAprob,MotivoRechazo,AprobadoPor';
     var url=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items?$select="+sel+"&$top=5000&$orderby=Fecha asc";
     var r=await fetch(url,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
     if(!r.ok){console.warn('ControlHoras_Registros: lista no encontrada ('+r.status+')');return;}
