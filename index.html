@@ -217,13 +217,15 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <table><thead><tr><th>ID</th><th>Nombre</th><th>Personas</th><th>Act.</th><th>Acciones</th></tr></thead><tbody id="g5"></tbody></table>
 <div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalNuevoCargo()">+ Nuevo cargo</button><button class="btn btn-s btn-sm" onclick="expCargosCSV()">Exportar</button><button class="btn btn-i btn-sm" onclick="impInteligente('cargos')">Importar</button></div>
 </div>
+</div>
 
-<div class="card" style="grid-column:1/-1"><h2>🔐 Permisos por Rol</h2>
-<p style="font-size:11px;color:#718096;margin-bottom:10px">Admin siempre tiene todos los permisos. Marca o desmarca para los demás roles.</p>
-<div style="overflow-x:auto"><table id="g6"><thead><tr><th style="text-align:left">Funcionalidad</th><th style="text-align:center;color:#667eea">Admin</th><th style="text-align:center;color:#38a169">Operador</th><th style="text-align:center;color:#d97706">Supervisor</th><th style="text-align:center;color:#e53e3e">Operario</th></tr></thead><tbody id="g6Body"></tbody></table></div>
+<div class="card" style="margin-top:12px"><h2>🔐 Permisos por Rol</h2>
+<p style="font-size:11px;color:#718096;margin-bottom:10px">Admin siempre tiene todos los permisos. Marca o desmarca para los demás roles y presiona Guardar.</p>
+<div style="overflow-x:auto"><table style="width:100%"><thead><tr><th style="text-align:left;padding:6px">Funcionalidad</th><th style="text-align:center;color:#667eea;padding:6px">Admin</th><th style="text-align:center;color:#38a169;padding:6px">Operador</th><th style="text-align:center;color:#d97706;padding:6px">Supervisor</th><th style="text-align:center;color:#e53e3e;padding:6px">Operario</th></tr></thead><tbody id="g6Body"></tbody></table></div>
 <div class="gestion-admin-actions" style="margin-top:10px"><button class="btn btn-s btn-sm" onclick="guardarPermisos()">💾 Guardar permisos</button></div>
 </div>
-</div></div>
+
+</div>
 
 <div id="modalContainer"></div>
 </div></div>
@@ -1353,10 +1355,10 @@ function eliminarCargo(id){if(!soloAdmin())return;
   guardarLS();renderGCargos();
 }
 
-function limpiar(){
+async function limpiar(){
   if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para limpiar registros.');return;}
   if(!confirm('¿Borrar todos los registros de '+fechaSel+'?\nEsta acción no se puede deshacer.'))return;
-  // Eliminar solo los datos de la fecha seleccionada en memoria
+  // Eliminar en memoria
   asg=asg.filter(function(a){return a.f!==fechaSel});
   reg=reg.filter(function(r){return r.f!==fechaSel});
   if(hue[fechaSel])delete hue[fechaSel];
@@ -1364,18 +1366,26 @@ function limpiar(){
   localStorage.setItem('asg',JSON.stringify(asg));
   localStorage.setItem('reg',JSON.stringify(reg));
   localStorage.setItem('hue',JSON.stringify(hue));
-  // Escribir borrado a SP directamente (sin safety check, es intencional)
-  if(SP_READY&&!SP_GUARDANDO){
-    SP_GUARDANDO=true;
-    Promise.all([
-      spEscribirItem('asg',asg),
-      spEscribirItem('reg',reg),
-      spEscribirItem('hue',hue)
-    ]).catch(function(e){console.warn('limpiar SP:',e.message)})
-    .finally(function(){SP_GUARDANDO=false});
-  }
+  // Refrescar UI inmediatamente
   stats();renderT1();renderT2();renderT3();renderT4();
-  alert('Registros del '+fechaSel+' eliminados.');
+  // Escribir a SP y ESPERAR confirmación antes de continuar
+  if(SP_READY){
+    SP_GUARDANDO=true; // bloquea auto-sync mientras escribe
+    spEstado('☁️ Borrando en SP...');
+    try{
+      await spEscribirItem('asg',asg);
+      await spEscribirItem('reg',reg);
+      await spEscribirItem('hue',hue);
+      spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+      alert('Registros del '+fechaSel+' eliminados y sincronizados.');
+    }catch(e){
+      alert('Registros borrados localmente, pero error al sincronizar SP:\n'+e.message);
+    }finally{
+      SP_GUARDANDO=false;
+    }
+  }else{
+    alert('Registros del '+fechaSel+' eliminados.');
+  }
 }
 function limpiarTodo(){if(!confirm('BORRAR TODO?'))return;limpiando=true;var keys=[];for(var i=0;i<localStorage.length;i++)keys.push(localStorage.key(i));keys.forEach(function(k){localStorage.removeItem(k)});sessionStorage.clear();window.location.replace(window.location.pathname+'?r='+Date.now())}
 
