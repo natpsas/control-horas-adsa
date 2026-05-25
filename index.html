@@ -217,6 +217,12 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <table><thead><tr><th>ID</th><th>Nombre</th><th>Personas</th><th>Act.</th><th>Acciones</th></tr></thead><tbody id="g5"></tbody></table>
 <div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalNuevoCargo()">+ Nuevo cargo</button><button class="btn btn-s btn-sm" onclick="expCargosCSV()">Exportar</button><button class="btn btn-i btn-sm" onclick="impInteligente('cargos')">Importar</button></div>
 </div>
+
+<div class="card" style="grid-column:1/-1"><h2>🔐 Permisos por Rol</h2>
+<p style="font-size:11px;color:#718096;margin-bottom:10px">Admin siempre tiene todos los permisos. Marca o desmarca para los demás roles.</p>
+<div style="overflow-x:auto"><table id="g6"><thead><tr><th style="text-align:left">Funcionalidad</th><th style="text-align:center;color:#667eea">Admin</th><th style="text-align:center;color:#38a169">Operador</th><th style="text-align:center;color:#d97706">Supervisor</th><th style="text-align:center;color:#e53e3e">Operario</th></tr></thead><tbody id="g6Body"></tbody></table></div>
+<div class="gestion-admin-actions" style="margin-top:10px"><button class="btn btn-s btn-sm" onclick="guardarPermisos()">💾 Guardar permisos</button></div>
+</div>
 </div></div>
 
 <div id="modalContainer"></div>
@@ -242,6 +248,24 @@ var asg=[],reg=[],hue={},usr=[];
 var fechaSel='',usuarioLogueado=null,limpiando=false;
 var CLAVE_MAESTRA='12340';
 var aprobacionMasivaActiva=true;
+// === PERMISOS POR ROL ===
+var PERMISOS={
+  editar_gestion:     {Admin:true, operador:false, supervisor:false, operario:false},
+  aprobar:            {Admin:true, operador:true,  supervisor:false, operario:false},
+  aprobacion_masiva:  {Admin:true, operador:false, supervisor:false, operario:false},
+  ver_todos_registros:{Admin:true, operador:true,  supervisor:false, operario:false},
+  consolidar:         {Admin:true, operador:true,  supervisor:true,  operario:true},
+  limpiar_fecha:      {Admin:true, operador:true,  supervisor:false, operario:false}
+};
+var PERMISOS_LABELS={
+  editar_gestion:     'Editar Gestión (TRB, ACT, MOD…)',
+  aprobar:            'Aprobar / Rechazar registros',
+  aprobacion_masiva:  'Aprobación masiva',
+  ver_todos_registros:'Ver todos los registros en Aprobación',
+  consolidar:         'Confirmar (consolidar) trabajadores',
+  limpiar_fecha:      'Limpiar registros de una fecha'
+};
+var ROLES_EDIT=['operador','supervisor','operario']; // Admin siempre tiene todo, no se edita
 
 // === LOGIN ===
 function checkLogin(){
@@ -269,7 +293,7 @@ function mostrarApp(){
   document.getElementById('usrLogged').textContent='\uD83D\uDC64 '+usuarioLogueado+rolLabel+' | Salir';
   // Checkbox aprobaci\u00F3n masiva solo para Admin
   var lblAM=document.getElementById('lblAprobMasiva');
-  if(lblAM)lblAM.style.display=usuarioLogueado==='Admin'?'flex':'none';
+  if(lblAM)lblAM.style.display=tienePermiso('aprobacion_masiva')?'flex':'none';
   init();
 }
 function cerrarSesion(){if(!confirm('\u00bfCerrar sesi\u00f3n?'))return;sessionStorage.removeItem('loggedUser');location.reload()}
@@ -331,13 +355,14 @@ function cargarLS(){
   s=localStorage.getItem('UNI_custom');if(s)UNI=JSON.parse(s);
   s=localStorage.getItem('CARGOS_custom');if(s)CARGOS=JSON.parse(s);
   s=localStorage.getItem('aprobMasiva');if(s)aprobacionMasivaActiva=JSON.parse(s);
+  s=localStorage.getItem('PERMISOS_custom');if(s){var p=JSON.parse(s);for(var k in p)if(PERMISOS[k])PERMISOS[k]=Object.assign({},PERMISOS[k],p[k]);}
 }
 function guardarLS(){
   localStorage.setItem('asg',JSON.stringify(asg));localStorage.setItem('reg',JSON.stringify(reg));
   localStorage.setItem('hue',JSON.stringify(hue));localStorage.setItem('usr',JSON.stringify(usr));
   localStorage.setItem('TRB_custom',JSON.stringify(TRB));localStorage.setItem('ACT_custom',JSON.stringify(ACT));
   localStorage.setItem('MOD_custom',JSON.stringify(MOD));localStorage.setItem('UNI_custom',JSON.stringify(UNI));
-  localStorage.setItem('CARGOS_custom',JSON.stringify(CARGOS));localStorage.setItem('aprobMasiva',JSON.stringify(aprobacionMasivaActiva));
+  localStorage.setItem('CARGOS_custom',JSON.stringify(CARGOS));localStorage.setItem('aprobMasiva',JSON.stringify(aprobacionMasivaActiva));localStorage.setItem('PERMISOS_custom',JSON.stringify(PERMISOS));
   // Guardar en SharePoint si está conectado
   if(SP_READY){
     spGuardar().then(function(){
@@ -506,7 +531,8 @@ async function spCargar(){
     'MOD':function(v){MOD=v;localStorage.setItem('MOD_custom',JSON.stringify(v))},
     'UNI':function(v){UNI=v;localStorage.setItem('UNI_custom',JSON.stringify(v))},
     'CARGOS':function(v){CARGOS=v;localStorage.setItem('CARGOS_custom',JSON.stringify(v))},
-    'aprobMasiva':function(v){aprobacionMasivaActiva=v;localStorage.setItem('aprobMasiva',JSON.stringify(v))}
+    'aprobMasiva':function(v){aprobacionMasivaActiva=v;localStorage.setItem('aprobMasiva',JSON.stringify(v))},
+    'PERMISOS':function(v){for(var k in v)if(PERMISOS[k])PERMISOS[k]=Object.assign({},PERMISOS[k],v[k]);localStorage.setItem('PERMISOS_custom',JSON.stringify(PERMISOS))}
   };
   var ok=0;
   for(var k in mapa){try{var it=await spLeerItem(k);if(it&&it.Valor){mapa[k](JSON.parse(it.Valor));ok++}}catch(e){console.warn('spCargar "'+k+'":',e.message)}}
@@ -516,9 +542,9 @@ async function spCargar(){
 async function spGuardar(){
   if(!SP_READY||SP_GUARDANDO)return;SP_GUARDANDO=true;
   try{
-    // Config centralizada — Admin y Operador pueden escribirla a SP
-    if(esAdmin()){
-      var config={'TRB':TRB,'ACT':ACT,'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva};
+    // Config centralizada — SOLO ADMIN puede escribirla a SP
+    if(usuarioLogueado==='Admin'){
+      var config={'TRB':TRB,'ACT':ACT,'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva,'PERMISOS':PERMISOS};
       for(var k in config)await spEscribirItem(k,config[k]);
     }
     // asg — merge seguro: solo escribe si hay datos locales para la fecha,
@@ -639,8 +665,7 @@ function getRolUsuario(){
 }
 function getCargoUsuario(){
   if(usuarioLogueado==='Admin')return 'ADMIN';
-  var rol=getRolUsuario();
-  if(rol==='operador')return 'ADMIN'; // operador ve y puede aprobar todo
+  if(tienePermiso('ver_todos_registros'))return 'ADMIN'; // ve y puede aprobar todo
   var u=usr.find(function(x){return x.usr===usuarioLogueado});
   if(!u)return null;
   var trab=TRB.find(function(t){return t.codigo===u.codigo});
@@ -649,9 +674,8 @@ function getCargoUsuario(){
   return cargo?cargo.id:null;
 }
 function puedeAprobar(registro){
-  if(usuarioLogueado==='Admin')return true;
-  var rol=getRolUsuario();
-  if(rol==='operador')return true; // operador puede aprobar cualquier registro
+  if(!tienePermiso('aprobar'))return false;
+  if(usuarioLogueado==='Admin'||tienePermiso('ver_todos_registros'))return true;
   var cargo=getCargoUsuario();
   if(!cargo)return false;
   var act=ACT.find(function(a){return a.id===registro.act});
@@ -1116,7 +1140,7 @@ function renderT3(){
   CARGOS.forEach(function(c){fh+='<option value="'+c.id+'" '+(fltCargo===c.id?'selected':'')+'>'+c.nombre+'</option>'});
   fh+='</select>';
   fh+='<select id="fltTipo" onchange="renderT3()"><option value="">Todos los tipos</option><option value="NORMAL" '+(fltTipo==='NORMAL'?'selected':'')+'>Normal</option><option value="EXTRAS" '+(fltTipo==='EXTRAS'?'selected':'')+'>Extras</option></select>';
-  if(aprobacionMasivaActiva&&filtrados.length>0&&usuarioLogueado==='Admin')fh+='<button class="btn btn-s btn-sm" onclick="aprobarMasivo()">Aprobar filtrados ('+filtrados.length+')</button>';
+  if(aprobacionMasivaActiva&&filtrados.length>0&&tienePermiso('aprobacion_masiva'))fh+='<button class="btn btn-s btn-sm" onclick="aprobarMasivo()">Aprobar filtrados ('+filtrados.length+')</button>';
   fh+='</div>';
   document.getElementById('t3Filtros').innerHTML=fh;
   if(!filtrados.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#a0aec0">Sin pendientes</td></tr>';return}
@@ -1169,7 +1193,7 @@ function aprobar(ri){
 }
 function rechazar(ri){var m=prompt('Motivo:');if(!m)return;reg[ri].st='rechazado';reg[ri].mr=m;reg[ri].fa=new Date().toISOString();reg[ri].aprobado_por=usuarioLogueado;guardarLS();renderT3()}
 function aprobarMasivo(){
-  if(usuarioLogueado!=='Admin'){alert('Solo el Administrador puede usar la aprobación masiva.');return;}
+  if(!tienePermiso('aprobacion_masiva')){alert('No tienes permiso para usar la aprobación masiva.');return;}
   var cargoUsr=getCargoUsuario();var cnt=0;
   reg.forEach(function(r){if(r.st!=='pendiente')return;var act=ACT.find(function(a){return a.id===r.act});var aprobador=act?act.aprobador:'ADMIN';
     if(cargoUsr==='ADMIN'||aprobador===cargoUsr){r.st='aprobado';r.fa=new Date().toISOString();cnt++}});
@@ -1330,14 +1354,26 @@ function eliminarCargo(id){if(!soloAdmin())return;
 }
 
 function limpiar(){
+  if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para limpiar registros.');return;}
   if(!confirm('¿Borrar todos los registros de '+fechaSel+'?\nEsta acción no se puede deshacer.'))return;
-  // Eliminar solo los datos de la fecha seleccionada
+  // Eliminar solo los datos de la fecha seleccionada en memoria
   asg=asg.filter(function(a){return a.f!==fechaSel});
   reg=reg.filter(function(r){return r.f!==fechaSel});
   if(hue[fechaSel])delete hue[fechaSel];
-  guardarLS();
-  // Sincronizar borrado a SharePoint si está disponible
-  if(SP_READY)spGuardar().catch(function(){});
+  // Guardar en localStorage
+  localStorage.setItem('asg',JSON.stringify(asg));
+  localStorage.setItem('reg',JSON.stringify(reg));
+  localStorage.setItem('hue',JSON.stringify(hue));
+  // Escribir borrado a SP directamente (sin safety check, es intencional)
+  if(SP_READY&&!SP_GUARDANDO){
+    SP_GUARDANDO=true;
+    Promise.all([
+      spEscribirItem('asg',asg),
+      spEscribirItem('reg',reg),
+      spEscribirItem('hue',hue)
+    ]).catch(function(e){console.warn('limpiar SP:',e.message)})
+    .finally(function(){SP_GUARDANDO=false});
+  }
   stats();renderT1();renderT2();renderT3();renderT4();
   alert('Registros del '+fechaSel+' eliminados.');
 }
@@ -1347,7 +1383,42 @@ function limpiarTodo(){if(!confirm('BORRAR TODO?'))return;limpiando=true;var key
 function renderGestion(){
   var t5=document.getElementById('t5');
   if(t5){if(esAdmin())t5.classList.remove('no-admin-gestion');else t5.classList.add('no-admin-gestion');}
-  renderGTrb();renderGAct();renderGMod();renderGUsr();renderGCargos()
+  renderGTrb();renderGAct();renderGMod();renderGUsr();renderGCargos();renderGPermisos();
+}
+function renderGPermisos(){
+  var adm=usuarioLogueado==='Admin';
+  var html='';
+  for(var clave in PERMISOS_LABELS){
+    html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:8px 4px;font-size:12px">'+PERMISOS_LABELS[clave]+'</td>';
+    // Admin — siempre ✅, no editable
+    html+='<td style="text-align:center"><span style="color:#38a169;font-size:16px">✅</span></td>';
+    // Roles editables
+    ROLES_EDIT.forEach(function(rol){
+      var chk=!!(PERMISOS[clave]&&PERMISOS[clave][rol]);
+      html+='<td style="text-align:center">';
+      if(adm){
+        html+='<input type="checkbox" data-clave="'+clave+'" data-rol="'+rol+'" '+(chk?'checked':'')+' style="width:16px;height:16px;cursor:pointer">';
+      }else{
+        html+='<span style="font-size:15px">'+(chk?'✅':'❌')+'</span>';
+      }
+      html+='</td>';
+    });
+    html+='</tr>';
+  }
+  document.getElementById('g6Body').innerHTML=html;
+}
+function guardarPermisos(){
+  if(!esAdmin()){alert('Solo el Administrador puede modificar permisos.');return;}
+  var checks=document.querySelectorAll('#g6Body input[type=checkbox]');
+  checks.forEach(function(ch){
+    var clave=ch.dataset.clave,rol=ch.dataset.rol;
+    if(PERMISOS[clave])PERMISOS[clave][rol]=ch.checked;
+  });
+  guardarLS();
+  // Actualizar visibilidad inmediata (checkbox aprob masiva en header, etc.)
+  var lblAM=document.getElementById('lblAprobMasiva');
+  if(lblAM)lblAM.style.display=tienePermiso('aprobacion_masiva')?'flex':'none';
+  alert('Permisos guardados y sincronizados.');
 }
 function renderGTrb(){var html='';var adm=esAdmin();TRB.forEach(function(t){html+='<tr style="'+(t.activo?'':'opacity:.5')+'"><td>'+t.codigo+'</td><td>'+t.nombre+'</td><td>'+t.area+'</td><td>'+(adm?(t.actividad_base?'<span class="badge b-ok" style="font-size:9px">Base</span> ':'')+' <button class="btn btn-i btn-sm" onclick="modalTrb(\''+t.codigo+'\')">Ed</button> <button class="btn btn-sm" style="background:#dbeafe;font-size:10px" onclick="modalConfigBase(\''+t.codigo+'\')">Base</button> <button class="btn btn-d btn-sm" onclick="togTrb(\''+t.codigo+'\')">'+(t.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(t.activo?'#c6f6d5':'#e2e8f0')+';color:'+(t.activo?'#276749':'#718096')+';font-size:9px">'+(t.activo?'Activo':'Inactivo')+'</span>')+'</td></tr>'});document.getElementById('g1').innerHTML=html}
 function renderGAct(){var uni=document.getElementById('gFltU').value;var cat=document.getElementById('gFltC').value;var list=ACT.filter(function(a){return(!uni||a.unidad===uni)&&(!cat||a.categoria===cat)});
@@ -1371,8 +1442,13 @@ function renderGCargos(){var html='';var adm=esAdmin();CARGOS.forEach(function(c
     :'<span class="badge" style="background:#e2e8f0;color:#718096;font-size:9px">Solo lectura</span>';
   html+='</td></tr>'});
   document.getElementById('g5').innerHTML=html}
-function esAdmin(){return usuarioLogueado==='Admin'||getRolUsuario()==='operador';}
-function soloAdmin(){if(!esAdmin()){alert('Solo el Administrador o un Operador puede realizar cambios en Gestión.');return false;}return true;}
+function tienePermiso(clave){
+  if(usuarioLogueado==='Admin')return true;
+  var rol=getRolUsuario();if(!rol)return false;
+  return !!(PERMISOS[clave]&&PERMISOS[clave][rol]);
+}
+function esAdmin(){return tienePermiso('editar_gestion');}
+function soloAdmin(){if(!esAdmin()){alert('Solo el Administrador puede realizar cambios en Gestión.');return false;}return true;}
 function togTrb(cod){if(!soloAdmin())return;var t=TRB.find(function(x){return x.codigo===cod});if(t){t.activo=!t.activo;guardarLS();renderGTrb()}}
 function cambiarAprobador(id,cargo){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.aprobador=cargo;guardarLS()}}
 function togAct(id){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.activo=!a.activo;guardarLS();renderGAct()}}
