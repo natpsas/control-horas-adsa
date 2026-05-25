@@ -273,6 +273,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button class="btn btn-i" onclick="modalConexionPA()">⚙️ Configurar URLs de Power Automate</button>
 <button class="btn btn-s" onclick="spSincronizarManual()" style="margin-left:6px">🔄 Sincronizar ahora</button>
 <button class="btn btn-sm" onclick="migrarRegistrosSP()" style="margin-left:6px;background:#744210;color:#fff;border:none" title="Sube registros existentes sin ID a la lista ControlHoras_Registros">📤 Migrar registros a SP</button>
+<button class="btn btn-sm" onclick="subirTodoSP()" style="margin-left:6px;background:#276749;color:#fff;border:none" title="Sube TODOS los registros a ControlHoras_Registros (incluye los que ya tienen ID)">☁️ Subir todo a SP</button>
 <button class="btn btn-sm" onclick="diagnosticarSPReg()" style="margin-left:6px;background:#2b4c8c;color:#fff;border:none" title="Verifica que la lista ControlHoras_Registros esté bien configurada">🔍 Diagnosticar lista</button>
 </div>
 <div class="grid-2">
@@ -805,6 +806,25 @@ async function diagnosticarSPReg(){
     L('7. Item de prueba eliminado ✅');
     alert('✅ LISTA OK\n\n'+log.join('\n'));
   }catch(e){L('EXCEPCIÓN: '+e.message);alert('Error:\n'+log.join('\n'));}
+}
+async function subirTodoSP(){
+  if(!SP_READY){alert('SP no conectado');return;}
+  if(!reg.length){toast('No hay registros para subir','warn');return;}
+  if(!confirm('¿Subir '+reg.length+' registros a ControlHoras_Registros?\n\nEsto creará o actualizará cada registro en SharePoint.'))return;
+  // Asignar ID a los que no tienen
+  reg.forEach(function(r){if(!r.id)r.id=genRegId();});
+  guardarLS();
+  toast('⏳ Subiendo '+reg.length+' registros a SP...','info',15000);
+  var ok=0,err=0;
+  // Subir en lotes de 5 para no saturar
+  for(var i=0;i<reg.length;i+=5){
+    var lote=reg.slice(i,i+5);
+    await Promise.all(lote.map(function(r){
+      return spEscribirReg(r).then(function(){ok++;}).catch(function(e){err++;console.warn('subirTodo:',r.id,e.message);});
+    }));
+  }
+  guardarLS();// guarda _spId actualizados
+  toast('✅ Subidos: '+ok+' | Errores: '+err,(err>0?'warn':'info'),6000);
 }
 async function migrarRegistrosSP(){
   if(!SP_READY){alert('SP no conectado');return;}
