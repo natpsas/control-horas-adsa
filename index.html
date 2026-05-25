@@ -812,12 +812,20 @@ function addAct(cod){
   mh+='<div style="font-size:12px;color:#718096;margin-top:2px">'+(trab?trab.nombre:'')+'</div></div>';
   mh+='<input type="hidden" id="mActCod" value="'+cod+'">';
   // B\u00fasqueda y filtros en una l\u00ednea
-  mh+='<div style="display:flex;gap:6px;margin-bottom:8px">';
+  mh+='<div style="display:flex;gap:6px;margin-bottom:6px">';
   mh+='<input type="text" id="mSearch" placeholder="\ud83d\udd0d Buscar actividad..." oninput="mFiltrar()" style="flex:1;padding:8px;border:2px solid #e2e8f0;border-radius:7px;font-size:13px">';
-  mh+='<select id="mUni" onchange="mCambioUni()" style="padding:8px;border:2px solid #e2e8f0;border-radius:7px;font-size:12px;color:#4a5568">';
-  mh+='<option value="">Todas</option>';
+  mh+='</div>';
+  mh+='<div style="display:flex;gap:6px;margin-bottom:8px">';
+  mh+='<select id="mUni" onchange="mCambioUni()" style="flex:1;padding:8px;border:2px solid #e2e8f0;border-radius:7px;font-size:12px;color:#4a5568">';
+  mh+='<option value="">Todas las unidades</option>';
   UNI.filter(function(u){return u.activo}).forEach(function(u){mh+='<option value="'+u.id+'">'+u.id+'</option>'});
-  mh+='</select></div>';
+  mh+='</select>';
+  mh+='<select id="mCat" onchange="mFiltrar()" style="flex:1;padding:8px;border:2px solid #e2e8f0;border-radius:7px;font-size:12px;color:#4a5568">';
+  mh+='<option value="">Todas las categor\u00edas</option>';
+  var catsInit=[];ACT.forEach(function(a){if(a.activo&&catsInit.indexOf(a.categoria)<0)catsInit.push(a.categoria)});catsInit.sort();
+  catsInit.forEach(function(c){mh+='<option value="'+c+'">'+c+'</option>';});
+  mh+='</select>';
+  mh+='</div>';
   // Lista de actividades
   mh+='<div id="mSubBox" style="max-height:220px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px;padding:4px;margin-bottom:10px"></div>';
   // M\u00f3dulos por actividad (aparece din\u00e1micamente)
@@ -839,13 +847,14 @@ function mCambioUni(){
 }
 function mFiltrar(){
   var src=(document.getElementById('mSearch').value||'').toLowerCase();
-  var uni=document.getElementById('mUni').value;
+  var uni=document.getElementById('mUni')?document.getElementById('mUni').value:'';
+  var cat=document.getElementById('mCat')?document.getElementById('mCat').value:'';
   var box=document.getElementById('mSubBox');
   var prevChecked={};[].slice.call(box.querySelectorAll('input:checked')).forEach(function(c){prevChecked[c.value]=true});
   var filtered=ACT.filter(function(a){
     if(!a.activo)return false;
     var ms=!src||a.subcategoria.toLowerCase().indexOf(src)>=0||a.categoria.toLowerCase().indexOf(src)>=0;
-    return ms&&(!uni||a.unidad===uni);
+    return ms&&(!uni||a.unidad===uni)&&(!cat||a.categoria===cat);
   });
   if(filtered.length===0){
     box.innerHTML='<p style="color:#a0aec0;font-size:12px;text-align:center;padding:16px">Sin resultados</p>';
