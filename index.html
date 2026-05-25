@@ -1329,7 +1329,18 @@ function eliminarCargo(id){if(!soloAdmin())return;
   guardarLS();renderGCargos();
 }
 
-function limpiar(){if(!confirm('Borrar registros?'))return;limpiando=true;asg=[];reg=[];hue={};['asg','reg','hue','TRB_custom','ACT_custom','MOD_custom','UNI_custom','CARGOS_custom'].forEach(function(k){localStorage.removeItem(k)});sessionStorage.clear();window.location.replace(window.location.pathname+'?r='+Date.now())}
+function limpiar(){
+  if(!confirm('¿Borrar todos los registros de '+fechaSel+'?\nEsta acción no se puede deshacer.'))return;
+  // Eliminar solo los datos de la fecha seleccionada
+  asg=asg.filter(function(a){return a.f!==fechaSel});
+  reg=reg.filter(function(r){return r.f!==fechaSel});
+  if(hue[fechaSel])delete hue[fechaSel];
+  guardarLS();
+  // Sincronizar borrado a SharePoint si está disponible
+  if(SP_READY)spGuardar().catch(function(){});
+  stats();renderT1();renderT2();renderT3();renderT4();
+  alert('Registros del '+fechaSel+' eliminados.');
+}
 function limpiarTodo(){if(!confirm('BORRAR TODO?'))return;limpiando=true;var keys=[];for(var i=0;i<localStorage.length;i++)keys.push(localStorage.key(i));keys.forEach(function(k){localStorage.removeItem(k)});sessionStorage.clear();window.location.replace(window.location.pathname+'?r='+Date.now())}
 
 // === TAB 5: GESTION ===
