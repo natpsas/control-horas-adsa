@@ -783,6 +783,42 @@ function puedeAprobar(registro){
   return act&&act.aprobador===cargo;
 }
 
+// === HELPERS HORAS H+M ===
+function hInput(id,val,maxH,onChg){
+  val=parseFloat(val)||0;
+  var h=Math.floor(val);
+  var mRaw=Math.round((val-h)*60);
+  var opts=[0,15,30,45];
+  var m=opts.reduce(function(p,c){return Math.abs(c-mRaw)<Math.abs(p-mRaw)?c:p;});
+  if(m>=60){h++;m=0;}
+  var ev=onChg?" onchange='"+onChg+"' oninput='"+onChg+"'":'';
+  var s='<div style="display:flex;align-items:center;gap:4px">';
+  s+='<input type="number" id="'+id+'_h" value="'+h+'" min="0" max="'+(maxH||16)+'" step="1"'+ev+' style="width:52px;padding:5px 4px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:14px;text-align:center;font-weight:600">';
+  s+='<span style="font-size:11px;color:#718096;font-weight:700">h</span>';
+  s+='<select id="'+id+'_m"'+ev+' style="padding:5px 6px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:13px">';
+  opts.forEach(function(mn){s+='<option value="'+mn+'"'+(m===mn?' selected':'')+'>'+('0'+mn).slice(-2)+'</option>';});
+  s+='</select>';
+  s+='<span style="font-size:11px;color:#718096;font-weight:700">m</span>';
+  s+='</div>';
+  return s;
+}
+function getHoras(id){
+  var hEl=document.getElementById(id+'_h');
+  var mEl=document.getElementById(id+'_m');
+  if(!hEl)return 0;
+  return (parseInt(hEl.value)||0)+(parseInt(mEl?mEl.value:0)||0)/60;
+}
+function setHInput(id,val){
+  val=parseFloat(val)||0;
+  var h=Math.floor(val);
+  var mRaw=Math.round((val-h)*60);
+  var m=[0,15,30,45].reduce(function(p,c){return Math.abs(c-mRaw)<Math.abs(p-mRaw)?c:p;});
+  if(m>=60){h++;m=0;}
+  var hEl=document.getElementById(id+'_h');var mEl=document.getElementById(id+'_m');
+  if(hEl)hEl.value=h;
+  if(mEl)mEl.value=m;
+}
+
 // === GUARDAR MODULOS ===
 function guardarModsEnMem(){
   TRB.forEach(function(t){if(!t.activo)return;
@@ -1255,10 +1291,10 @@ function renderT2(){
         h+='</div></div>';
       }else if(act&&act.usa_modulo&&modsA.length===0){h+=' <span style="color:#c53030;font-size:10px">\u26a0 Sin m\u00f3dulo configurado</span>'}
       if(tieneR)h+=' <span class="badge b-ex">'+indLabel(act.indicador)+'</span>';
-      h+='<div class="fr" style="margin-top:5px"><div class="fg"><label>Horas</label><input type="number" id="ah_'+cod+'_'+i+'" value="'+(a.h||0)+'" min="0" max="16" step="0.5" onchange="updActH(\''+cod+'\','+i+',this.value)"></div>';
+      h+='<div class="fr" style="margin-top:5px"><div class="fg"><label>Horas</label>'+hInput('ah_'+cod+'_'+i,a.h||0,16,'updActH("'+cod+'",'+i+')')+'</div>';
       if(tieneR)h+='<div class="fg"><label>Rend. '+(act.desc_rend||indLabel(act.indicador))+'</label><input type="number" id="rend_'+cod+'_'+i+'" value="'+(a.rend||'')+'" min="0" step="1" placeholder="Cantidad"></div>';
       h+='</div></div>'});
-    h+='<div class="fr" style="margin-top:7px"><div class="fg"><label>Horas totales (m\u00e1x: '+maxN+'h)</label><input type="number" id="ht_'+cod+'" value="'+totalH+'" min="0" max="16" step="0.5"></div>';
+    h+='<div class="fr" style="margin-top:7px"><div class="fg"><label>Horas totales (m\u00e1x: '+maxN+'h)</label>'+hInput('ht_'+cod,totalH,16,null)+'</div>';
     h+='<div class="fg"><label>Referencia <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="ref_'+cod+'" placeholder="Ej: OP-001, Lote A..."></div>';
     h+='<div class="fg"><label>Obs. <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="obs_'+cod+'" placeholder="Opcional"></div>';
     h+='<div class="fg" style="display:flex;align-items:flex-end"><button class="btn btn-s" onclick="consolidar(\''+cod+'\')">Confirmar</button></div></div>';
@@ -1279,19 +1315,19 @@ function guardarModsConsol(){
     });
   });
 }
-function updActH(cod,idx,val){
+function updActH(cod,idx){
   var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});
-  if(ex[idx])ex[idx].h=parseFloat(val)||0;
-  // Actualizar total
+  if(ex[idx])ex[idx].h=getHoras('ah_'+cod+'_'+idx);
+  // Actualizar total en los campos h+m
   var total=0;ex.forEach(function(a){total+=a.h||0});
-  var htEl=document.getElementById('ht_'+cod);if(htEl)htEl.value=total;
+  setHInput('ht_'+cod,total);
   guardarLS();
 }
 function reintegrar(cod){var trb=TRB.find(function(t){return t.codigo===cod});if(!confirm('Reintegrar a '+trb.nombre+'?'))return;asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel&&a.na)});guardarLS();toast('✅ '+trb.nombre+' reintegrado');renderT2()}
 function desconsolidar(cod){var trb=TRB.find(function(t){return t.codigo===cod});var regs2=reg.filter(function(r){return r.w===cod&&r.f===fechaSel});if(!confirm('Reabrir '+trb.nombre+'? Se borrar\u00e1n '+regs2.length+' registros.'))return;reg=reg.filter(function(r){return !(r.w===cod&&r.f===fechaSel)});guardarLS();stats();renderT2();renderT1()}
 function consolidar(cod){
   var d=fechaSel;var yaC=reg.filter(function(r){return r.w===cod&&r.f===d});if(yaC.length>0){alert('Ya consolidado. Usa Editar.');return}
-  var htEl=document.getElementById('ht_'+cod);if(!htEl){alert('Error');return}var hrs=parseFloat(htEl.value)||0;if(hrs<=0){alert('Horas > 0');return}
+  if(!document.getElementById('ht_'+cod+'_h')){alert('Error');return}var hrs=getHoras('ht_'+cod);if(hrs<=0){alert('Horas > 0');return}
   var obsEl=document.getElementById('obs_'+cod);var obs=obsEl?obsEl.value:'';
   var refEl=document.getElementById('ref_'+cod);var ref=refEl?refEl.value.trim():'';
   var acts2=asg.filter(function(a){return a.w===cod&&a.f===d&&!a.na});if(acts2.length===0){alert('Sin actividades');return}
@@ -1312,7 +1348,7 @@ function consolidar(cod){
   if(sinRend&&!confirm('Hay actividades con rendimiento obligatorio sin reportar. \u00bfContinuar de todas formas?'))return;
   var hNorm=diaSem===0?0:Math.min(hrs,maxN);var hExt=diaSem===0?hrs:Math.max(0,hrs-maxN);var excedeH=hu&&hrs>hu.h;
   // Leer horas individuales desde los inputs del formulario
-  acts2.forEach(function(a,i){var hEl=document.getElementById('ah_'+cod+'_'+i);if(hEl)a.h=parseFloat(hEl.value)||a.h;});
+  acts2.forEach(function(a,i){if(document.getElementById('ah_'+cod+'_'+i+'_h'))a.h=getHoras('ah_'+cod+'_'+i);});
   var totalActH=0;acts2.forEach(function(a){totalActH+=a.h||0});
   acts2.forEach(function(a){var act=ACT.find(function(x){return x.id===a.act});
     // hr = horas normales proporcionales al peso de cada actividad
@@ -2001,7 +2037,7 @@ function modalConfigBase(cod){if(!soloAdmin())return;
   });
   mh+='</select></div>';
   // Horas
-  mh+='<div class="fg"><label>Horas base</label><input type="number" id="mcbH" value="'+(t.horas_base||8)+'" min="0" max="16" step="0.5"></div>';
+  mh+='<div class="fg"><label>Horas base</label>'+hInput('mcbH',t.horas_base||8,16,null)+'</div>';
   // Modulos
   mh+='<div class="fg"><label>M\u00f3dulos base <button type="button" class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllMcb()">Todos</button></label>';
   mh+='<div class="modbox" id="mcbMods">';
@@ -2035,7 +2071,7 @@ function doSaveConfigBase(){
   var cod=document.getElementById('mcbCod').value;
   var t=TRB.find(function(x){return x.codigo===cod});if(!t)return;
   var actId=document.getElementById('mcbAct').value;
-  var hrs=parseFloat(document.getElementById('mcbH').value)||8;
+  var hrs=getHoras('mcbH')||8;
   var mods=[].slice.call(document.querySelectorAll('#mcbMods input:checked')).map(function(c){return c.value});
   t.actividad_base=actId||'';
   t.horas_base=hrs;
