@@ -951,6 +951,8 @@ function poblarFiltros(){
 function cerrarModal(){document.getElementById('modalContainer').innerHTML=''}
 // Retorna solo la unidad antes del "/" (ej: "KG/H" → "KG", "PLANTAS/JOR" → "PLANTAS")
 function indLabel(ind){if(!ind)return '';var p=ind.indexOf('/');return p>=0?ind.substring(0,p).trim():ind;}
+var MOTIVOS_NA=[['INJ','Falta injustificada'],['JUS','Falta justificada'],['LM','Licencia médica'],['PER','Permiso autorizado'],['FER','Feriado'],['VAC','Vacaciones'],['OTRO','Otro']];
+function naMotLabel(mt){if(!mt)return'';var f=MOTIVOS_NA.find(function(m){return m[0]===mt});return f?f[1]:mt.replace(/_/g,' ');}
 function toast(msg,tipo,dur){
   var tc=document.getElementById('toastContainer');if(!tc)return;
   var t=document.createElement('div');
@@ -1099,7 +1101,7 @@ function renderT1(){
       // Header mejorado
       h+='<div class="wc-hdr"><div><div class="wc-name">'+t.nombre+'<span class="wc-code">'+t.codigo+'</span></div><div class="wc-area">'+t.area+(isNA?' &nbsp;':'')+' '+fechaSel+'</div></div>';
       h+='<div class="wc-stats">';
-      if(isNA){h+='<span class="badge b-na" style="font-size:11px">NO ASISTI\u00d3</span>'}
+      if(isNA){h+='<span class="badge b-na" style="font-size:11px">NO ASISTI\u00d3</span>';var naMotL=naMotLabel(na&&na.mt?na.mt:'');if(naMotL)h+=' <span style="font-size:10px;color:#9a3412;background:#fed7aa;border-radius:4px;padding:1px 6px">'+naMotL+'</span>';}
       else if(yaC){
         h+='<div class="wc-stat"><span class="wc-stat-val">'+regsT.length+'</span><span class="wc-stat-lbl">registros</span></div>';
         var hTot=0;regsT.forEach(function(r){hTot+=r.hr});
@@ -1121,9 +1123,12 @@ function renderT1(){
         return;
       }
       h+='<div class="na-box"><label style="display:flex;align-items:center;gap:7px;cursor:pointer;font-weight:600;color:#9a3412;font-size:13px"><input type="checkbox" id="na_'+t.codigo+'" style="width:17px;height:17px" '+(isNA?'checked':'')+' onchange="toggleNA(\''+t.codigo+'\')"> NO ASISTI\u00d3 HOY</label>';
-      h+='<div id="naD_'+t.codigo+'" style="margin-top:7px;'+(isNA?'':'display:none')+'"><select id="mot_'+t.codigo+'" style="width:100%;padding:6px;border:1px solid #fdba74;border-radius:5px;font-size:12px"><option value="">Motivo (opcional)...</option>';
-      ['ENFERMEDAD','INCAPACIDAD','PERMISO','CALAMIDAD','VACACIONES','COMPENSATORIO','SIN_AVISO','INJUSTIFICADA','OTRO'].forEach(function(m){h+='<option value="'+m+'" '+(na&&na.mt===m?'selected':'')+'>'+m.replace(/_/g,' ')+'</option>'});
-      h+='</select></div></div>';
+      h+='<div id="naD_'+t.codigo+'" style="margin-top:7px;'+(isNA?'':'display:none')+'">';
+      h+='<select id="mot_'+t.codigo+'" style="width:100%;padding:6px;border:1px solid #fdba74;border-radius:5px;font-size:12px;margin-bottom:5px"><option value="">Motivo (opcional)...</option>';
+      MOTIVOS_NA.forEach(function(m){h+='<option value="'+m[0]+'" '+(na&&na.mt===m[0]?'selected':'')+'>'+m[1]+'</option>'});
+      h+='</select>';
+      h+='<textarea id="obs_'+t.codigo+'" placeholder="Observación (opcional)..." rows="2" style="width:100%;padding:6px;border:1px solid #fdba74;border-radius:5px;font-size:12px;resize:vertical;box-sizing:border-box">'+(na&&na.obs?na.obs:'')+'</textarea>';
+      h+='</div></div>';
       h+='<div id="af_'+t.codigo+'" style="'+(isNA?'display:none':'')+'">';
       if(ex.length===0)h+='<p style="color:#a0aec0;font-size:12px;padding:6px">Sin actividades</p>';
       ex.forEach(function(a,i){
@@ -1317,7 +1322,7 @@ function delActConsol(cod,idx){
 function updH(cod,idx,val){guardarModsEnMem();var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});var i=asg.indexOf(ex[idx]);if(i>=0){asg[i].h=parseFloat(val)||0;guardarLS()}}
 function updX(cod,idx,val){guardarModsEnMem();var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});var i=asg.indexOf(ex[idx]);if(i>=0){asg[i].x=val;guardarLS()}}
 function toggleNA(cod){guardarModsEnMem();var ch=document.getElementById('na_'+cod);var nd=document.getElementById('naD_'+cod);var af=document.getElementById('af_'+cod);
-  if(ch.checked){nd.style.display='';af.style.display='none';asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel)});asg.push({f:fechaSel,w:cod,na:true,mt:'',h:0})}
+  if(ch.checked){nd.style.display='';af.style.display='none';asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel)});asg.push({f:fechaSel,w:cod,na:true,mt:'',obs:'',h:0})}
   else{nd.style.display='none';af.style.display='';asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel&&a.na)})}guardarLS();stats()}
 function selAllMod(id){var cbs=document.querySelectorAll('#mb_'+id+' input[type=checkbox]');var all=true;cbs.forEach(function(c){if(!c.checked)all=false});cbs.forEach(function(c){c.checked=!all})}
 function cargarPlantilla(){
@@ -1340,7 +1345,7 @@ function cargarPlantilla(){
   if(cnt>0){guardarLS();renderT1();stats();toast('\u2705 Plantilla cargada: '+cnt+' trabajadores')}
   else{alert('No hay trabajadores con actividad base configurada. Ve a Gesti\u00f3n \u2192 Trabajadores \u2192 Config base.')}
 }
-function guardarT1(){guardarModsEnMem();TRB.forEach(function(t){if(!t.activo)return;var naEl=document.getElementById('na_'+t.codigo);if(naEl&&naEl.checked){var na=asg.find(function(a){return a.w===t.codigo&&a.f===fechaSel&&a.na});if(na){var motEl=document.getElementById('mot_'+t.codigo);if(motEl)na.mt=motEl.value||''}}});
+function guardarT1(){guardarModsEnMem();TRB.forEach(function(t){if(!t.activo)return;var naEl=document.getElementById('na_'+t.codigo);if(naEl&&naEl.checked){var na=asg.find(function(a){return a.w===t.codigo&&a.f===fechaSel&&a.na});if(na){var motEl=document.getElementById('mot_'+t.codigo);if(motEl)na.mt=motEl.value||'';var obsEl=document.getElementById('obs_'+t.codigo);if(obsEl)na.obs=obsEl.value||''}}});
   guardarLS();var tot=TRB.filter(function(t){return t.activo}).length;var seen={};asg.forEach(function(a){if(a.f===fechaSel)seen[a.w]=1});toast('💾 Guardado: '+Object.keys(seen).length+'/'+tot+' trabajadores');stats();renderT1()}
 
 // === TAB 2: CONSOLIDACION ===
@@ -1466,8 +1471,11 @@ function renderT2(){
   // INASISTENCIAS
   if(inas.length>0){h+='<div style="background:#fff7ed;border:2px solid #f59e0b;border-radius:9px;padding:12px;margin-bottom:14px"><h3 style="color:#92400e;margin-bottom:8px;font-size:14px">\u{26D4} Inasistencias ('+inas.length+')</h3>';
     inas.forEach(function(a){var trb=TRB.find(function(t){return t.codigo===a.w});var huI=hD[a.w];
-      h+='<div style="background:#fff;border:1px solid #fdba74;border-radius:6px;padding:8px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><div><b>'+trb.nombre+'</b> <span style="color:#92400e;font-size:10px">'+(a.mt?a.mt.replace(/_/g,' '):'')+'</span>';
-      if(huI)h+=' <span class="badge b-ok">Huella detectada: '+huI.h+'h ('+huI.e+'\u2192'+huI.s+')</span>';
+      var motLbl=naMotLabel(a.mt);
+      h+='<div style="background:#fff;border:1px solid #fdba74;border-radius:6px;padding:8px;margin-bottom:5px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px"><div><b>'+trb.nombre+'</b>';
+      if(motLbl)h+=' <span style="background:#fed7aa;color:#7c2d12;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:600">'+motLbl+'</span>';
+      if(a.obs)h+=' <span style="color:#92400e;font-size:11px;font-style:italic">\u2014 '+a.obs+'</span>';
+      if(huI)h+=' <span class="badge b-ok" style="margin-left:4px">Huella: '+huI.h+'h ('+huI.e+'\u2192'+huI.s+')</span>';
       h+='</div><button class="btn btn-i btn-sm" onclick="reintegrar(\''+a.w+'\')">Reintegrar</button></div>'});h+='</div>'}
 
   // PERSONAL SIN DATA (activos sin asignacion ni inasistencia)
@@ -1914,6 +1922,30 @@ function renderT4(){
     html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-size:11px;color:#718096">'+b.cat+'</td><td style="padding:6px 8px;font-weight:600">'+b.sub+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+b.h.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+rendStr+'</td><td style="text-align:center;padding:6px 8px">'+promH.toFixed(1)+'h</td></tr>';
   });
   html+='</tbody></table></div>';
+  // --- Ausencias en el período ---
+  var inasPer=asg.filter(function(a){
+    if(!a.na)return false;
+    if(fltF&&a.f!==fltF)return false;
+    if(fltA){var trb=TRB.find(function(t){return t.codigo===a.w});if(!trb||trb.area!==fltA)return false;}
+    return true;
+  });
+  if(inasPer.length>0){
+    html+='<h3 style="font-size:13px;font-weight:700;color:#92400e;margin-bottom:6px">⛔ Ausencias en el período ('+inasPer.length+')</h3>';
+    html+='<div style="overflow-x:auto;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+    html+='<thead><tr style="background:#fff7ed"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #f59e0b">Fecha</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #f59e0b">Trabajador</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #f59e0b">Área</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #f59e0b">Motivo</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #f59e0b">Observación</th></tr></thead><tbody>';
+    inasPer.sort(function(a,b){return a.f.localeCompare(b.f)}).forEach(function(a){
+      var trb=TRB.find(function(t){return t.codigo===a.w});
+      var motLbl=naMotLabel(a.mt);
+      html+='<tr style="border-bottom:1px solid #fef3c7">';
+      html+='<td style="padding:6px 8px;font-size:11px;color:#718096">'+a.f+'</td>';
+      html+='<td style="padding:6px 8px;font-weight:600">'+(trb?trb.nombre:a.w)+'</td>';
+      html+='<td style="padding:6px 8px;font-size:11px;color:#718096">'+(trb?trb.area:'')+'</td>';
+      html+='<td style="padding:6px 8px">'+(motLbl?'<span style="background:#fed7aa;color:#7c2d12;border-radius:4px;padding:1px 7px;font-size:10px;font-weight:600">'+motLbl+'</span>':'<span style="color:#a0aec0">—</span>')+'</td>';
+      html+='<td style="padding:6px 8px;font-size:11px;color:#4a5568;font-style:italic">'+(a.obs||'')+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div>';
+  }
   // --- Detalle por trabajador ---
   var byTrb={};
   base.forEach(function(r){
@@ -1985,7 +2017,7 @@ function genWA(){
   txt+='*ASISTENCIA*\nPresentes: '+codigos.length+'\nAusencias: '+hoyNA.length+'\n\n';
   if(codigos.length>0){txt+='*ASIGNACIONES*\n';var byA2={};codigos.forEach(function(cod){var trb=TRB.find(function(t){return t.codigo===cod});if(!byA2[trb.area])byA2[trb.area]=[];byA2[trb.area].push(trb)});
     for(var area in byA2){txt+='\n*'+area+'*\n';byA2[area].forEach(function(trb){var acts3=hoyAsg.filter(function(a){return a.w===trb.codigo});var tH=0;acts3.forEach(function(a){tH+=a.h||0});txt+='  '+trb.nombre+' ('+tH+'h)\n';acts3.forEach(function(a){var act=ACT.find(function(x){return x.id===a.act});txt+='    - '+(act?act.subcategoria:'Act')+' '+a.h+'h'+(a.x?' EXT':'')+'\n'})})}}
-  if(hoyNA.length>0){txt+='\n*AUSENCIAS*\n';hoyNA.forEach(function(a){var trb=TRB.find(function(t){return t.codigo===a.w});txt+='  '+trb.nombre+(a.mt?' ('+a.mt.replace(/_/g,' ')+')':'')+'\n'})}
+  if(hoyNA.length>0){txt+='\n*AUSENCIAS*\n';hoyNA.forEach(function(a){var trb=TRB.find(function(t){return t.codigo===a.w});var motLbl=naMotLabel(a.mt);txt+='  '+trb.nombre+(motLbl?' ('+motLbl+')':'')+(a.obs?' — '+a.obs:'')+'\n'})}
   txt+='\n'+new Date().toLocaleString();document.getElementById('waText').value=txt;document.getElementById('waText').style.display='block';document.getElementById('waCopy').style.display='inline-block';
 }
 function copiarWA(){var ta=document.getElementById('waText');ta.select();navigator.clipboard.writeText(ta.value).then(function(){toast('✅ Copiado al portapapeles')}).catch(function(){document.execCommand('copy');toast('✅ Copiado al portapapeles')})}
@@ -2048,10 +2080,10 @@ function buildXLSX(regF,inaF,sufijo){
   ws1['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft'};
   XLSX.utils.book_append_sheet(wb,ws1,'Registros');
   // Hoja Inasistencias
-  var rows2=[['Fecha','Código','Trabajador','Área','Motivo']];
-  inaF.forEach(function(a){var trb=TRB.find(function(t){return t.codigo===a.w});rows2.push([a.f,a.w,trb?trb.nombre:'',trb?trb.area:'',(a.mt||'').replace(/_/g,' ')]);});
+  var rows2=[['Fecha','Código','Trabajador','Área','Motivo','Observación']];
+  inaF.forEach(function(a){var trb=TRB.find(function(t){return t.codigo===a.w});rows2.push([a.f,a.w,trb?trb.nombre:'',trb?trb.area:'',naMotLabel(a.mt||''),a.obs||'']);});
   var ws2=XLSX.utils.aoa_to_sheet(rows2);
-  ws2['!cols']=[{wch:12},{wch:10},{wch:24},{wch:18},{wch:18}];
+  ws2['!cols']=[{wch:12},{wch:10},{wch:24},{wch:18},{wch:22},{wch:30}];
   ws2['!freeze']={xSplit:0,ySplit:1,topLeftCell:'A2',activePane:'bottomLeft'};
   XLSX.utils.book_append_sheet(wb,ws2,'Inasistencias');
   // Hoja Resumen
