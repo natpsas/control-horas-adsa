@@ -273,6 +273,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div id="paEstadoPanel" style="font-size:12px;margin-bottom:10px"></div>
 <button class="btn btn-i" onclick="modalConexionPA()">⚙️ Configurar URLs de Power Automate</button>
 <button class="btn btn-s" onclick="spSincronizarManual()" style="margin-left:6px">🔄 Sincronizar ahora</button>
+<button class="btn btn-sm" onclick="migrarRegistrosSP()" style="margin-left:6px;background:#744210;color:#fff;border:none" title="Sube registros existentes sin ID a la lista ControlHoras_Registros">📤 Migrar registros históricos a SP</button>
 </div>
 <div class="grid-2">
 <div class="card"><h2>👥 Trabajadores</h2>
@@ -450,12 +451,29 @@ function cargarLS(){
   s=localStorage.getItem('aprobMasiva');if(s)aprobacionMasivaActiva=JSON.parse(s);
   s=localStorage.getItem('PERMISOS_custom');if(s){var p=JSON.parse(s);for(var k in p)if(PERMISOS[k])PERMISOS[k]=Object.assign({},PERMISOS[k],p[k]);}
 }
+var _lsAlertaUltima=0;
+function checkLSCapacidad(){
+  try{
+    var total=0;for(var k in localStorage){if(localStorage.hasOwnProperty(k))total+=localStorage[k].length;}
+    var kb=Math.round(total*2/1024);var pct=Math.round(kb/5120*100);
+    updLSIndicador();
+    var ahora=Date.now();
+    if(pct>=90&&ahora-_lsAlertaUltima>3600000){
+      _lsAlertaUltima=ahora;
+      alert('⚠️ ALMACENAMIENTO CRÍTICO: '+pct+'% usado ('+kb+' KB / 5120 KB)\n\nVe a la pestaña Reportes → Exportar / Archivar\ny usa "Archivar y limpiar" para liberar espacio.');
+    }else if(pct>=70&&ahora-_lsAlertaUltima>3600000){
+      _lsAlertaUltima=ahora;
+      toast('⚠️ Almacenamiento al '+pct+'% — considera archivar registros antiguos','warn',5000);
+    }
+  }catch(e){}
+}
 function guardarLS(){
   localStorage.setItem('asg',JSON.stringify(asg));localStorage.setItem('reg',JSON.stringify(reg));
   localStorage.setItem('hue',JSON.stringify(hue));localStorage.setItem('usr',JSON.stringify(usr));
   localStorage.setItem('TRB_custom',JSON.stringify(TRB));localStorage.setItem('ACT_custom',JSON.stringify(ACT));
   localStorage.setItem('MOD_custom',JSON.stringify(MOD));localStorage.setItem('UNI_custom',JSON.stringify(UNI));
   localStorage.setItem('CARGOS_custom',JSON.stringify(CARGOS));localStorage.setItem('aprobMasiva',JSON.stringify(aprobacionMasivaActiva));localStorage.setItem('PERMISOS_custom',JSON.stringify(PERMISOS));
+  checkLSCapacidad();
   // Guardar en SharePoint si está conectado
   if(SP_READY){
     spGuardar().then(function(){
@@ -501,6 +519,7 @@ var SP_READY=false;
 var SP_GUARDANDO=false;
 var SP_URL='https://arandanosdesanantonio882.sharepoint.com/sites/ControlDeActividadesADSA';
 var SP_LIST='ControlHoras_Datos';
+var SP_LIST_REG='ControlHoras_Registros'; // lista fila-por-registro
 var SP_DIGEST=null;
 var SP_DIGEST_TS=0;
 var MSAL_TOKEN=null;
@@ -637,6 +656,118 @@ async function spEscribirItem(key,valor){
   }
 }
 
+// =====================================================
+// === SP LISTA DE REGISTROS (fila por registro) ===
+// =====================================================
+function genRegId(){
+  return Date.now().toString(36).toUpperCase()+Math.random().toString(36).substr(2,5).toUpperCase();
+}
+function regToSPCols(r){
+  return {
+    Title:r.id,
+    Fecha:r.f,Codigo:r.w,Trabajador:r.n,Area:r.ar,
+    Unidad:r.uni||'',Categoria:r.cat||'',SubCategoria:r.sub||'',ActividadId:r.act||'',
+    Tipo:r.tp||'NORMAL',
+    HAsig:r.h||0,HReg:parseFloat((r.hr||0).toFixed(2)),
+    Rendimiento:r.rend||0,Indicador:indLabel(r.ind||''),
+    HHuellero:r.hhu||0,Entrada:r.ehu||'',Salida:r.shu||'',
+    Modulos:(r.mods||[]).join(', '),
+    Referencia:r.ref||'',Observaciones:r.obs||'',
+    Estado:r.st||'pendiente',
+    FechaConsolid:r.fc||'',FechaAprob:r.fa||'',
+    MotivoRechazo:r.mr||'',AprobadoPor:r.aprobado_por||''
+  };
+}
+function spColsToReg(it){
+  return {
+    id:it.Title,_spId:it.Id,
+    f:it.Fecha||'',w:it.Codigo||'',n:it.Trabajador||'',ar:it.Area||'',
+    uni:it.Unidad||'',cat:it.Categoria||'',sub:it.SubCategoria||'',act:it.ActividadId||'',
+    tp:it.Tipo||'NORMAL',
+    h:parseFloat(it.HAsig)||0,hr:parseFloat(it.HReg)||0,
+    rend:it.Rendimiento||null,ind:it.Indicador||'',
+    hhu:it.HHuellero||null,ehu:it.Entrada||null,shu:it.Salida||null,
+    mods:it.Modulos?it.Modulos.split(', ').filter(function(m){return m}):[],
+    ref:it.Referencia||'',obs:it.Observaciones||'',
+    st:it.Estado||'pendiente',
+    fc:it.FechaConsolid||'',fa:it.FechaAprob||'',
+    mr:it.MotivoRechazo||'',aprobado_por:it.AprobadoPor||'',
+    excede:false
+  };
+}
+async function spEscribirReg(r){
+  if(!SP_READY||!r)return;
+  if(!r.id)r.id=genRegId();
+  var token=await _getToken();var digest=await _spGetDigest();
+  var body=JSON.stringify(regToSPCols(r));
+  var hdrBase={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token};
+  var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items";
+  if(r._spId){
+    var h2=Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'});
+    await fetch(listUrl+'('+r._spId+')',{method:'POST',headers:h2,body:body});
+  }else{
+    // Buscar por Title
+    var enc=encodeURIComponent("Title eq '"+r.id+"'");
+    var fr=await fetch(listUrl+'?$filter='+enc+'&$select=Id&$top=1',{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    var fd=await fr.json();
+    if(fd.value&&fd.value.length){
+      r._spId=fd.value[0].Id;
+      var h3=Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'});
+      await fetch(listUrl+'('+r._spId+')',{method:'POST',headers:h3,body:body});
+    }else{
+      var cr=await fetch(listUrl,{method:'POST',headers:hdrBase,body:body});
+      if(cr.ok){var cd=await cr.json();if(cd.Id)r._spId=cd.Id;}
+    }
+  }
+}
+async function spEliminarReg(r){
+  if(!SP_READY||!r)return;
+  var token=await _getToken();var digest=await _spGetDigest();
+  var spId=r._spId;
+  var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items";
+  if(!spId&&r.id){
+    var enc=encodeURIComponent("Title eq '"+r.id+"'");
+    var fr=await fetch(listUrl+'?$filter='+enc+'&$select=Id&$top=1',{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    var fd=await fr.json();if(fd.value&&fd.value.length)spId=fd.value[0].Id;
+  }
+  if(!spId)return;
+  var hdr={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token,'IF-MATCH':'*','X-HTTP-Method':'DELETE'};
+  await fetch(listUrl+'('+spId+')',{method:'POST',headers:hdr,body:'{}'});
+}
+async function spCargarRegistros(){
+  if(!SP_READY)return;
+  try{
+    var token=await _getToken();
+    var sel='Id,Title,Fecha,Codigo,Trabajador,Area,Unidad,Categoria,SubCategoria,ActividadId,Tipo,HAsig,HReg,Rendimiento,Indicador,HHuellero,Entrada,Salida,Modulos,Referencia,Observaciones,Estado,FechaConsolid,FechaAprob,MotivoRechazo,AprobadoPor';
+    var url=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items?$select="+sel+"&$top=5000&$orderby=Fecha asc";
+    var r=await fetch(url,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(!r.ok){console.warn('ControlHoras_Registros: lista no encontrada ('+r.status+')');return;}
+    var d=await r.json();
+    if(d.value&&d.value.length){
+      var spRegs=d.value.map(spColsToReg);
+      // Mantener registros locales sin ID (no sincronizados aún)
+      var sinId=reg.filter(function(x){return !x.id});
+      // Merge: SP gana para registros con ID; agregar locales sin ID
+      var spIds={};spRegs.forEach(function(x){spIds[x.id]=1;});
+      reg=spRegs.concat(sinId);
+      localStorage.setItem('reg',JSON.stringify(reg));
+      console.log('SP Registros cargados: '+spRegs.length);
+    }
+  }catch(e){console.warn('spCargarRegistros:',e.message);}
+}
+async function migrarRegistrosSP(){
+  if(!SP_READY){alert('SP no conectado');return;}
+  var sinId=reg.filter(function(r){return !r.id});
+  if(!sinId.length){toast('✅ Todos los registros ya tienen ID','info');return;}
+  toast('⏳ Migrando '+sinId.length+' registros a SP...','info',8000);
+  sinId.forEach(function(r){r.id=genRegId();});
+  guardarLS();
+  try{
+    await Promise.all(sinId.map(function(r){return spEscribirReg(r).catch(function(e){console.warn('migrar:',e.message);});}));
+    guardarLS();// guarda _spId
+    toast('✅ '+sinId.length+' registros migrados a ControlHoras_Registros');
+  }catch(e){toast('⚠️ Error migrando: '+e.message,'warn');}
+}
 async function spCargar(){
   var mapa={
     'asg':function(v){asg=v;localStorage.setItem('asg',JSON.stringify(v))},
@@ -654,6 +785,7 @@ async function spCargar(){
   var ok=0;
   for(var k in mapa){try{var it=await spLeerItem(k);if(it&&it.Valor){mapa[k](JSON.parse(it.Valor));ok++}}catch(e){console.warn('spCargar "'+k+'":',e.message)}}
   console.log('SharePoint: '+ok+'/'+Object.keys(mapa).length+' claves cargadas');
+  await spCargarRegistros(); // carga lista fila-por-registro
 }
 
 async function spGuardar(){
@@ -1393,7 +1525,14 @@ function updActH(cod,idx){
   guardarLS();
 }
 function reintegrar(cod){var trb=TRB.find(function(t){return t.codigo===cod});if(!confirm('Reintegrar a '+trb.nombre+'?'))return;asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel&&a.na)});guardarLS();toast('✅ '+trb.nombre+' reintegrado');renderT2()}
-function desconsolidar(cod){var trb=TRB.find(function(t){return t.codigo===cod});var regs2=reg.filter(function(r){return r.w===cod&&r.f===fechaSel});if(!confirm('Reabrir '+trb.nombre+'? Se borrar\u00e1n '+regs2.length+' registros.'))return;reg=reg.filter(function(r){return !(r.w===cod&&r.f===fechaSel)});guardarLS();stats();renderT2();renderT1()}
+function desconsolidar(cod){
+  var trb=TRB.find(function(t){return t.codigo===cod});
+  var regsD=reg.filter(function(r){return r.w===cod&&r.f===fechaSel});
+  if(!confirm('Reabrir '+trb.nombre+'? Se borrar\u00e1n '+regsD.length+' registros.'))return;
+  reg=reg.filter(function(r){return !(r.w===cod&&r.f===fechaSel)});
+  guardarLS();stats();renderT2();renderT1();
+  if(SP_READY)Promise.all(regsD.map(function(r){return spEliminarReg(r).catch(function(){});}));
+}
 function consolidar(cod){
   var d=fechaSel;var yaC=reg.filter(function(r){return r.w===cod&&r.f===d});if(yaC.length>0){alert('Ya consolidado. Usa Editar.');return}
   if(!document.getElementById('ht_'+cod+'_h')){alert('Error');return}var hrs=getHoras('ht_'+cod);if(hrs<=0){alert('Horas > 0');return}
@@ -1422,14 +1561,16 @@ function consolidar(cod){
   acts2.forEach(function(a){var act=ACT.find(function(x){return x.id===a.act});
     // hr = horas normales proporcionales al peso de cada actividad
     var hrNorm=totalActH>0?Math.round(a.h*(hNorm/totalActH)*2)/2:hNorm/acts2.length;
-    reg.push({f:d,w:cod,n:trb.nombre,ar:trb.area,act:a.act,uni:a.uni,cat:act?act.categoria:'',sub:act?act.subcategoria:'',
+    reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:a.act,uni:a.uni,cat:act?act.categoria:'',sub:act?act.subcategoria:'',
       h:a.h,hr:hrNorm,rend:a.rend||null,ind:act?act.indicador:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
-      mods:a.mods||[],obs:obs,ref:ref,tp:'NORMAL',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:''})});
+      mods:a.mods||[],obs:obs,ref:ref,tp:'NORMAL',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''})});
   if(hExt>0){var a0=acts2[0],act0=ACT.find(function(x){return x.id===a0.act});
-    reg.push({f:d,w:cod,n:trb.nombre,ar:trb.area,act:a0.act,uni:a0.uni,cat:act0?act0.categoria:'',sub:act0?act0.subcategoria:'',
+    reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:a0.act,uni:a0.uni,cat:act0?act0.categoria:'',sub:act0?act0.subcategoria:'',
       h:hExt,hr:hExt,rend:null,ind:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
-      mods:a0.mods||[],obs:'EXTRAS - '+obs,ref:ref,tp:'EXTRAS',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:''})}
+      mods:a0.mods||[],obs:'EXTRAS - '+obs,ref:ref,tp:'EXTRAS',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''})}
   guardarLS();stats();toast('✅ Consolidado: '+hNorm.toFixed(1)+'h'+(hExt>0?' + '+hExt.toFixed(1)+'h ext':''));renderT2();renderT1();
+  // Sincronizar a lista SP fila-por-registro
+  if(SP_READY){var nuevos=reg.filter(function(r){return r.f===d&&r.w===cod});Promise.all(nuevos.map(function(r){return spEscribirReg(r).catch(function(){});})).then(function(){guardarLS();});}
 }
 
 // === TAB 3: APROBACION CON FILTROS Y EDICION ===
@@ -1549,6 +1690,7 @@ function revertirAprobacion(ri){
   if(!esAdmin())return;
   reg[ri].st='pendiente';reg[ri].fa='';reg[ri].aprobado_por='';
   guardarLS();toast('Registro revertido a pendiente','info');renderT3();
+  if(SP_READY)spEscribirReg(reg[ri]).catch(function(){});
 }
 function selAllModE(ri){
   var cbs=document.querySelectorAll('#em_'+ri+' input[type=checkbox]');
@@ -1564,6 +1706,7 @@ function guardarEdicion(ri){
   reg[ri].obs=document.getElementById('eo_'+ri).value;
   var eref=document.getElementById('eref_'+ri);if(eref)reg[ri].ref=eref.value.trim();
   guardarLS();renderT3();
+  if(SP_READY)spEscribirReg(reg[ri]).catch(function(){});
 }
 function aprobar(ri){
   var r=reg[ri];
@@ -1572,8 +1715,9 @@ function aprobar(ri){
   var act=ACT.find(function(a){return a.id===r.act});
   if(act&&act.indicador&&(!r.rend||r.rend<=0)){if(!confirm('Rendimiento obligatorio no reportado. \u00bfAprobar de todas formas?'))return}
   reg[ri].st='aprobado';reg[ri].fa=new Date().toISOString();reg[ri].aprobado_por=usuarioLogueado;guardarLS();toast('✅ Registro aprobado');renderT3();
+  if(SP_READY)spEscribirReg(reg[ri]).catch(function(){});
 }
-function rechazar(ri){var m=prompt('Motivo:');if(!m)return;reg[ri].st='rechazado';reg[ri].mr=m;reg[ri].fa=new Date().toISOString();reg[ri].aprobado_por=usuarioLogueado;guardarLS();toast('✅ Registro rechazado','warn');renderT3()}
+function rechazar(ri){var m=prompt('Motivo:');if(!m)return;reg[ri].st='rechazado';reg[ri].mr=m;reg[ri].fa=new Date().toISOString();reg[ri].aprobado_por=usuarioLogueado;guardarLS();toast('✅ Registro rechazado','warn');renderT3();if(SP_READY)spEscribirReg(reg[ri]).catch(function(){});}
 function aprobarMasivo(){
   if(!tienePermiso('aprobacion_masiva')){alert('No tienes permiso para usar la aprobación masiva.');return;}
   // Leer filtros activos en T3
