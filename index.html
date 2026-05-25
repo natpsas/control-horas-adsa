@@ -171,13 +171,32 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 
 <div id="t3" class="tc">
 <div class="alert al-i"><b>Aprobación</b> — Todo pasa por supervisor. Extras no aprobadas no se pagan.</div>
-<div class="card"><h2>Registros Pendientes</h2>
+<div class="card"><h2>Registros</h2>
 <div id="t3Filtros"></div>
-<table><thead><tr><th>Fecha</th><th>Trabajador</th><th>Actividad</th><th>H.Reg</th><th>H.Huella</th><th>Rend.</th><th>Módulos</th><th>Referencia</th><th>Tipo</th><th>Acciones</th></tr></thead>
+<table><thead><tr><th>Fecha</th><th>Trabajador</th><th>Actividad</th><th>H.Reg</th><th>H.Huella</th><th>Rend.</th><th>Módulos</th><th>Referencia</th><th>Estado</th><th>Acciones</th></tr></thead>
 <tbody id="t3Body"></tbody></table></div></div>
 
 <div id="t4" class="tc">
-<div class="card"><h2>📊 Resumen</h2><div id="t4Sum"></div></div>
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+    <h2 style="margin:0">📊 Reportes</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <select id="t4FltFecha" onchange="renderT4()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">
+        <option value="">Todas las fechas</option>
+      </select>
+      <select id="t4FltArea" onchange="renderT4()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">
+        <option value="">Todas las áreas</option>
+      </select>
+      <select id="t4FltSt" onchange="renderT4()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">
+        <option value="">Todos los estados</option>
+        <option value="aprobado">Aprobados</option>
+        <option value="pendiente">Pendientes</option>
+        <option value="rechazado">Rechazados</option>
+      </select>
+    </div>
+  </div>
+  <div id="t4Sum"></div>
+</div>
 <div class="card"><h2>📱 Resumen WhatsApp</h2>
 <button class="btn btn-s" onclick="genWA()" style="margin-bottom:8px">📱 Generar</button>
 <textarea id="waText" style="width:100%;height:180px;border:2px solid #e2e8f0;border-radius:7px;padding:8px;font-family:monospace;font-size:11px;display:none;resize:vertical" readonly></textarea>
@@ -703,6 +722,8 @@ function poblarFiltros(){
   unis.forEach(function(u){var o=document.createElement('option');o.value=u;o.textContent=u;s2.appendChild(o)});
 }
 function cerrarModal(){document.getElementById('modalContainer').innerHTML=''}
+// Retorna solo la unidad antes del "/" (ej: "KG/H" → "KG", "PLANTAS/JOR" → "PLANTAS")
+function indLabel(ind){if(!ind)return '';var p=ind.indexOf('/');return p>=0?ind.substring(0,p).trim():ind;}
 function toast(msg,tipo,dur){
   var tc=document.getElementById('toastContainer');if(!tc)return;
   var t=document.createElement('div');
@@ -1168,10 +1189,25 @@ function renderT2(){
     var totalH=0;acts.forEach(function(a){totalH+=a.h||0});
     // Ya consolidado?
     var yaC=reg.filter(function(r){return r.w===cod&&r.f===d});
-    if(yaC.length>0){var hTot=0;yaC.forEach(function(r){hTot+=r.hr});var est=yaC[0].st;var colE=est==='aprobado'?'#c6f6d5':est==='rechazado'?'#fecaca':'#fef3c7';
-      h+='<div class="wc" style="opacity:.6;background:'+colE+'"><h3>'+trb.nombre+' <span class="badge" style="background:#a0aec0;color:#fff">CONSOLIDADO</span> <span class="badge" style="background:'+colE+'">'+hTot.toFixed(1)+'h | '+est.toUpperCase()+'</span></h3>';
-      yaC.forEach(function(r){h+='<div style="font-size:11px">\u2022 '+(r.sub||'')+' '+r.hr.toFixed(1)+'h '+(r.tp==='EXTRAS'?'<b style="color:#92400e">(EXT)</b>':'')+' <span style="color:#718096">M\u00f3d: '+(r.mods||[]).join(', ')+'</span></div>'});
-      h+='<button class="btn btn-i btn-sm" onclick="desconsolidar(\''+cod+'\')">\u270f\ufe0f Editar</button></div>';return}
+    if(yaC.length>0){
+      var hTot=0;yaC.forEach(function(r){hTot+=r.hr});
+      var est=yaC[0].st;
+      var colE=est==='aprobado'?'#c6f6d5':est==='rechazado'?'#fecaca':'#fef3c7';
+      // Advertencias huellero sobre consolidado
+      var alertaHC=hu&&hTot>hu.h;
+      var bordeC=alertaHC?'border-color:#f87171;border-width:3px':'';
+      h+='<div class="wc" style="opacity:.85;background:'+colE+';'+bordeC+'">';
+      h+='<h3>'+trb.nombre+' <span class="badge" style="background:#a0aec0;color:#fff">CONSOLIDADO</span> <span class="badge" style="background:'+colE+'">'+hTot.toFixed(1)+'h | '+est.toUpperCase()+'</span>';
+      if(hu){h+=' <span class="badge b-ok" style="font-size:9px">Huella: '+hu.h+'h ('+hu.e+'\u2192'+hu.s+')</span>';}
+      else{h+=' <span class="badge" style="background:#e2e8f0;color:#4a5568;font-size:9px">Sin huella</span>';}
+      h+='</h3>';
+      // Alerta si horas consolidadas superan huella
+      if(alertaHC){h+='<div class="alert al-e" style="padding:5px 8px;font-size:11px;margin-bottom:6px">\u26a0\ufe0f <b>Horas consolidadas ('+hTot.toFixed(1)+'h) superan la huella ('+hu.h+'h).</b> Diferencia: '+(hTot-hu.h).toFixed(1)+'h sin respaldo.</div>';}
+      else if(hu&&hTot<=hu.h&&hTot>0){h+='<div style="background:#c6f6d5;border:1px solid #48bb78;border-radius:5px;padding:4px 8px;margin-bottom:6px;font-size:11px;color:#276749">\u2705 Horas ('+hTot.toFixed(1)+'h) dentro de huella ('+hu.h+'h)</div>';}
+      else if(!hu){h+='<div style="background:#f7fafc;border:1px solid #e2e8f0;border-radius:5px;padding:4px 8px;margin-bottom:6px;font-size:11px;color:#718096">\ud83d\udcf5 Sin huella registrada para este trabajador</div>';}
+      yaC.forEach(function(r){h+='<div style="font-size:11px">\u2022 '+(r.sub||'')+' '+r.hr.toFixed(1)+'h '+(r.tp==='EXTRAS'?'<b style="color:#92400e">(EXT)</b>':'')+' <span style="color:#718096">M\u00f3d: '+(r.mods||[]).join(', ')+'</span>'+(r.ref?' <span style="color:#9f7aea;font-size:10px">Ref: '+r.ref+'</span>':'')+'</div>';});
+      h+='<button class="btn btn-i btn-sm" onclick="desconsolidar(\''+cod+'\')">\u270f\ufe0f Editar</button></div>';return;
+    }
     // Alertas de huella
     var alertaH=hu&&totalH>hu.h;
     var sinModulo=acts.some(function(a){var actObj=ACT.find(function(x){return x.id===a.act});return actObj&&actObj.usa_modulo&&(!a.mods||a.mods.length===0);});
@@ -1192,9 +1228,9 @@ function renderT2(){
         modsA.forEach(function(m){var chk=selMA.indexOf(m.id)>=0;h+='<div class="cbi"><input type="checkbox" value="'+m.id+'" '+(chk?'checked':'')+'><label>'+m.nombre+'</label></div>'});
         h+='</div></div>';
       }else if(act&&act.usa_modulo&&modsA.length===0){h+=' <span style="color:#c53030;font-size:10px">\u26a0 Sin m\u00f3dulo configurado</span>'}
-      if(tieneR)h+=' <span class="badge b-ex">'+act.indicador+'</span>';
+      if(tieneR)h+=' <span class="badge b-ex">'+indLabel(act.indicador)+'</span>';
       h+='<div class="fr" style="margin-top:5px"><div class="fg"><label>Horas</label><input type="number" id="ah_'+cod+'_'+i+'" value="'+(a.h||0)+'" min="0" max="16" step="0.5" onchange="updActH(\''+cod+'\','+i+',this.value)"></div>';
-      if(tieneR)h+='<div class="fg"><label>Rend. '+(act.desc_rend||act.indicador)+'</label><input type="number" id="rend_'+cod+'_'+i+'" value="'+(a.rend||'')+'" min="0" step="1" placeholder="Cantidad"></div>';
+      if(tieneR)h+='<div class="fg"><label>Rend. '+(act.desc_rend||indLabel(act.indicador))+'</label><input type="number" id="rend_'+cod+'_'+i+'" value="'+(a.rend||'')+'" min="0" step="1" placeholder="Cantidad"></div>';
       h+='</div></div>'});
     h+='<div class="fr" style="margin-top:7px"><div class="fg"><label>Horas totales (m\u00e1x: '+maxN+'h)</label><input type="number" id="ht_'+cod+'" value="'+totalH+'" min="0" max="16" step="0.5"></div>';
     h+='<div class="fg"><label>Referencia <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="ref_'+cod+'" placeholder="Ej: OP-001, Lote A..."></div>';
@@ -1267,57 +1303,112 @@ function consolidar(cod){
 
 // === TAB 3: APROBACION CON FILTROS Y EDICION ===
 function renderT3(){
-  var p=reg.filter(function(r){return r.st==='pendiente'});
   var fltCargo=document.getElementById('fltCargo')?document.getElementById('fltCargo').value:'';
-  var fltTipo=document.getElementById('fltTipo')?document.getElementById('fltTipo').value:'';
-  // Filtrar por cargo del usuario logueado
+  var fltTipo =document.getElementById('fltTipo') ?document.getElementById('fltTipo').value :'';
+  var fltSt   =document.getElementById('fltSt')   ?document.getElementById('fltSt').value   :'pendiente';
+  var fltCat  =document.getElementById('fltCat')  ?document.getElementById('fltCat').value  :'';
+  var fltSub  =document.getElementById('fltSub')  ?document.getElementById('fltSub').value  :'';
   var cargoUsr=getCargoUsuario();
-  var filtrados=p.filter(function(r){
+  // Todos los registros visibles para este usuario (sin filtro de estado)
+  var visibles=reg.filter(function(r){
     var act=ACT.find(function(a){return a.id===r.act});
     var aprobador=act?act.aprobador:'ADMIN';
-    // Si es admin ve todo, si no solo sus actividades
-    var permiso=(cargoUsr==='ADMIN')||aprobador===cargoUsr;
+    return (cargoUsr==='ADMIN')||aprobador===cargoUsr;
+  });
+  // Aplicar filtros
+  var filtrados=visibles.filter(function(r){
+    var act=ACT.find(function(a){return a.id===r.act});
+    var aprobador=act?act.aprobador:'ADMIN';
+    if(fltSt&&r.st!==fltSt)return false;
     if(fltCargo&&aprobador!==fltCargo)return false;
     if(fltTipo&&r.tp!==fltTipo)return false;
-    return permiso;
+    if(fltCat&&(r.cat||'')!==fltCat)return false;
+    if(fltSub&&(r.sub||'')!==fltSub)return false;
+    return true;
   });
+  var pendFiltrados=filtrados.filter(function(r){return r.st==='pendiente';});
+  // Opciones dinamicas basadas en todos los visibles
+  var cats=[],subs=[];
+  visibles.forEach(function(r){if(r.cat&&cats.indexOf(r.cat)<0)cats.push(r.cat);});cats.sort();
+  visibles.filter(function(r){return !fltCat||r.cat===fltCat;}).forEach(function(r){if(r.sub&&subs.indexOf(r.sub)<0)subs.push(r.sub);});subs.sort();
   var tb=document.getElementById('t3Body');
-  // Filtros
-  var fh='<div class="fb" style="margin-bottom:10px">';
-  fh+='<select id="fltCargo" onchange="renderT3()"><option value="">Todos los cargos</option>';
+  // Barra de filtros
+  var fh='<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px;align-items:center">';
+  fh+='<select id="fltSt" onchange="renderT3()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">';
+  fh+='<option value="">Todos</option>';
+  fh+='<option value="pendiente" '+(fltSt==='pendiente'?'selected':'')+'>Pendientes</option>';
+  fh+='<option value="aprobado" '+(fltSt==='aprobado'?'selected':'')+'>Aprobados</option>';
+  fh+='<option value="rechazado" '+(fltSt==='rechazado'?'selected':'')+'>Rechazados</option>';
+  fh+='</select>';
+  fh+='<select id="fltCargo" onchange="renderT3()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todos los supervisores</option>';
   CARGOS.forEach(function(c){fh+='<option value="'+c.id+'" '+(fltCargo===c.id?'selected':'')+'>'+c.nombre+'</option>'});
   fh+='</select>';
-  fh+='<select id="fltTipo" onchange="renderT3()"><option value="">Todos los tipos</option><option value="NORMAL" '+(fltTipo==='NORMAL'?'selected':'')+'>Normal</option><option value="EXTRAS" '+(fltTipo==='EXTRAS'?'selected':'')+'>Extras</option></select>';
-  if(aprobacionMasivaActiva&&filtrados.length>0&&tienePermiso('aprobacion_masiva'))fh+='<button class="btn btn-s btn-sm" onclick="aprobarMasivo()">Aprobar filtrados ('+filtrados.length+')</button>';
+  fh+='<select id="fltTipo" onchange="renderT3()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todos los tipos</option><option value="NORMAL" '+(fltTipo==="NORMAL"?'selected':'')+'>Normal</option><option value="EXTRAS" '+(fltTipo==="EXTRAS"?'selected':'')+'>Extras</option></select>';
+  fh+='<select id="fltCat" onchange="renderT3()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todas las categorias</option>';
+  cats.forEach(function(c){fh+='<option value="'+c+'" '+(fltCat===c?'selected':'')+'>'+c+'</option>'});
+  fh+='</select>';
+  fh+='<select id="fltSub" onchange="renderT3()" style="padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todas las actividades</option>';
+  subs.forEach(function(s){fh+='<option value="'+s+'" '+(fltSub===s?'selected':'')+'>'+s+'</option>'});
+  fh+='</select>';
+  fh+='<span style="font-size:11px;color:#718096;margin-left:4px">'+filtrados.length+' registro(s)</span>';
+  if(aprobacionMasivaActiva&&pendFiltrados.length>0&&tienePermiso('aprobacion_masiva'))
+    fh+='<button class="btn btn-s btn-sm" onclick="aprobarMasivo()" style="margin-left:auto">Aprobar pendientes ('+pendFiltrados.length+')</button>';
   fh+='</div>';
   document.getElementById('t3Filtros').innerHTML=fh;
-  if(!filtrados.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#a0aec0">Sin pendientes</td></tr>';return}
+  if(!filtrados.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#a0aec0">Sin registros</td></tr>';return}
   var html='';
-  filtrados.forEach(function(r,i){
-    var ri=reg.indexOf(r);var excede=r.hhu&&r.hr>r.hhu;var act=ACT.find(function(a){return a.id===r.act});
-    var bg=excede?'background:#fef2f2':r.tp==='EXTRAS'?'background:#fffbeb':'';
+  filtrados.forEach(function(r){
+    var ri=reg.indexOf(r);
+    var excede=r.hhu&&r.hr>r.hhu;
+    var act=ACT.find(function(a){return a.id===r.act});
     var puede=puedeAprobar(r);
-    html+='<tr style="'+bg+'" id="row_'+ri+'"><td>'+r.f+'</td><td><b>'+r.n+'</b>'+(excede?'<br><span style="color:#dc2626;font-size:9px">H>Huella</span>':'')+'</td>';
-    html+='<td style="font-size:10px">'+(act?actDesc(act):'')+'</td><td>'+r.hr.toFixed(1)+'h</td>';
+    var bg=r.st==='aprobado'?'background:#f0fff4':r.st==='rechazado'?'background:#fff5f5':excede?'background:#fef2f2':r.tp==='EXTRAS'?'background:#fffbeb':'';
+    var stBadge=r.st==='aprobado'
+      ?'<span class="badge" style="background:#c6f6d5;color:#276749;font-size:10px">Aprobado'+(r.aprobado_por?' · '+r.aprobado_por:'')+'</span>'
+      :r.st==='rechazado'
+      ?'<span class="badge" style="background:#fecaca;color:#991b1b;font-size:10px">Rechazado'+(r.mr?' · '+r.mr:'')+'</span>'
+      :'<span class="badge" style="background:#fef3c7;color:#92400e;font-size:10px">Pendiente</span>'+(excede?'<br><span style="color:#dc2626;font-size:9px">H&gt;Huella</span>':'');
+    html+='<tr style="'+bg+'" id="row_'+ri+'">';
+    html+='<td>'+r.f+'</td>';
+    html+='<td><b>'+r.n+'</b></td>';
+    html+='<td style="font-size:10px">'+(act?actDesc(act):'')+' '+(r.tp==='EXTRAS'?'<span class="badge b-ex">EXT</span>':'')+'</td>';
+    html+='<td>'+r.hr.toFixed(1)+'h</td>';
     html+='<td>'+(r.hhu?r.hhu+'h':'-')+'</td>';
-    html+='<td>'+(r.rend?r.rend+' '+(r.ind||''):'-')+'</td><td style="font-size:10px">'+(r.mods||[]).join(', ')+'</td>';
+    html+='<td>'+(r.rend?r.rend+' '+indLabel(r.ind||''):'-')+'</td>';
+    html+='<td style="font-size:10px">'+(r.mods||[]).join(', ')+'</td>';
     html+='<td style="font-size:10px;color:#4a5568">'+(r.ref||'-')+'</td>';
-    html+='<td>'+(r.tp==='EXTRAS'?'<span class="badge b-ex">EXT</span>':excede?'<span class="badge b-w">!</span>':'<span class="badge b-ok">OK</span>')+'</td>';
-    html+='<td>'+(puede?'<button class="btn btn-s btn-sm" onclick="aprobar('+ri+')">Aprobar</button> <button class="btn btn-d btn-sm" onclick="rechazar('+ri+')">Rechazar</button> <button class="btn btn-i btn-sm" onclick="editarReg('+ri+')">Editar</button>':'<span style="font-size:10px;color:#a0aec0">Sin permiso</span>')+'</td></tr>';
-    // Fila expandible de edicion
-    html+='<tr id="edit_'+ri+'" style="display:none"><td colspan="11" style="background:#f7fafc;padding:12px"><div class="fr">';
-    html+='<div class="fg"><label>Horas</label><input type="number" id="eh_'+ri+'" value="'+r.hr+'" min="0" max="16" step="0.5"></div>';
-    html+='<div class="fg"><label>Rendimiento</label><input type="number" id="er_'+ri+'" value="'+(r.rend||'')+'" min="0" step="1"></div>';
-    var actR=ACT.find(function(a){return a.id===r.act});var uniR=actR?actR.unidad:'';var modsR=MOD.filter(function(m){return m.activo&&m.unidad===uniR});var selMR=r.mods||[];
-    html+='<div class="fg"><label>M\u00f3dulos <button class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllModE('+ri+')">Todos</button></label><div class="modbox" id="em_'+ri+'">';
-    if(modsR.length>0){modsR.forEach(function(m){var chk=selMR.indexOf(m.id)>=0;html+='<div class="cbi"><input type="checkbox" value="'+m.id+'" '+(chk?'checked':'')+'><label>'+m.nombre+'</label></div>'})}
-    else{html+='<div style="font-size:11px;color:#718096">Sin m\u00f3dulos para '+uniR+'</div>'}
-    html+='</div></div>';
-    html+='<div class="fg"><label>Referencia</label><input type="text" id="eref_'+ri+'" value="'+(r.ref||'')+'" placeholder="Opcional"></div>';
-    html+='<div class="fg"><label>Obs.</label><input type="text" id="eo_'+ri+'" value="'+(r.obs||'')+'"></div>';
-    html+='</div><div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-s btn-sm" onclick="guardarEdicion('+ri+')">Guardar</button><button class="btn btn-sm" style="background:#edf2f7" onclick="cancelarEdicion('+ri+')">Cancelar</button></div></td></tr>';
+    html+='<td style="font-size:10px">'+stBadge+'</td>';
+    html+='<td>';
+    if(r.st==='pendiente'){
+      if(puede){
+        html+='<button class="btn btn-s btn-sm" onclick="aprobar('+ri+')">Aprobar</button> ';
+        html+='<button class="btn btn-d btn-sm" onclick="rechazar('+ri+')">Rechazar</button> ';
+        html+='<button class="btn btn-i btn-sm" onclick="editarReg('+ri+')">Editar</button>';
+      }else{html+='<span style="font-size:10px;color:#a0aec0">Sin permiso</span>';}
+    }else if(esAdmin()){
+      html+='<button class="btn btn-sm" style="background:#edf2f7;font-size:10px" onclick="revertirAprobacion('+ri+')">Revertir</button>';
+    }
+    html+='</td></tr>';
+    if(r.st==='pendiente'){
+      html+='<tr id="edit_'+ri+'" style="display:none"><td colspan="10" style="background:#f7fafc;padding:12px"><div class="fr">';
+      html+='<div class="fg"><label>Horas</label><input type="number" id="eh_'+ri+'" value="'+r.hr+'" min="0" max="16" step="0.5"></div>';
+      html+='<div class="fg"><label>Rendimiento</label><input type="number" id="er_'+ri+'" value="'+(r.rend||'')+'" min="0" step="1"></div>';
+      var actR=ACT.find(function(a){return a.id===r.act});var uniR=actR?actR.unidad:'';var modsR=MOD.filter(function(m){return m.activo&&m.unidad===uniR});var selMR=r.mods||[];
+      html+='<div class="fg"><label>Módulos <button class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllModE('+ri+')">Todos</button></label><div class="modbox" id="em_'+ri+'">';
+      if(modsR.length>0){modsR.forEach(function(m){var chk=selMR.indexOf(m.id)>=0;html+='<div class="cbi"><input type="checkbox" value="'+m.id+'" '+(chk?'checked':'')+'><label>'+m.nombre+'</label></div>'})}
+      else{html+='<div style="font-size:11px;color:#718096">Sin módulos para '+uniR+'</div>'}
+      html+='</div></div>';
+      html+='<div class="fg"><label>Referencia</label><input type="text" id="eref_'+ri+'" value="'+(r.ref||'')+'" placeholder="Opcional"></div>';
+      html+='<div class="fg"><label>Obs.</label><input type="text" id="eo_'+ri+'" value="'+(r.obs||'')+'"></div>';
+      html+='</div><div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-s btn-sm" onclick="guardarEdicion('+ri+')">Guardar</button><button class="btn btn-sm" style="background:#edf2f7" onclick="cancelarEdicion('+ri+')">Cancelar</button></div></td></tr>';
+    }
   });
   tb.innerHTML=html;
+}
+function revertirAprobacion(ri){
+  if(!esAdmin())return;
+  reg[ri].st='pendiente';reg[ri].fa='';reg[ri].aprobado_por='';
+  guardarLS();toast('Registro revertido a pendiente','info');renderT3();
 }
 function selAllModE(ri){
   var cbs=document.querySelectorAll('#em_'+ri+' input[type=checkbox]');
@@ -1347,18 +1438,19 @@ function aprobarMasivo(){
   if(!tienePermiso('aprobacion_masiva')){alert('No tienes permiso para usar la aprobación masiva.');return;}
   // Leer filtros activos en T3
   var fltCargo=document.getElementById('fltCargo')?document.getElementById('fltCargo').value:'';
-  var fltTipo=document.getElementById('fltTipo')?document.getElementById('fltTipo').value:'';
+  var fltTipo =document.getElementById('fltTipo') ?document.getElementById('fltTipo').value :'';
+  var fltCat  =document.getElementById('fltCat')  ?document.getElementById('fltCat').value  :'';
+  var fltSub  =document.getElementById('fltSub')  ?document.getElementById('fltSub').value  :'';
   var cargoUsr=getCargoUsuario();var cnt=0;
   reg.forEach(function(r){
     if(r.st!=='pendiente')return;
     var act=ACT.find(function(a){return a.id===r.act});
     var aprobador=act?act.aprobador:'ADMIN';
-    // Respetar permisos del usuario
     if(cargoUsr!=='ADMIN'&&aprobador!==cargoUsr)return;
-    // Respetar filtro de cargo activo
     if(fltCargo&&aprobador!==fltCargo)return;
-    // Respetar filtro de tipo activo
     if(fltTipo&&r.tp!==fltTipo)return;
+    if(fltCat&&(r.cat||'')!==fltCat)return;
+    if(fltSub&&(r.sub||'')!==fltSub)return;
     r.st='aprobado';r.fa=new Date().toISOString();r.aprobado_por=usuarioLogueado;cnt++;
   });
   guardarLS();toast('✅ '+cnt+' registros aprobados');renderT3();
@@ -1366,9 +1458,94 @@ function aprobarMasivo(){
 
 // === TAB 4: REPORTES ===
 function renderT4(){
-  var ap=reg.filter(function(r){return r.st==='aprobado'}),rch=reg.filter(function(r){return r.st==='rechazado'}),pend=reg.filter(function(r){return r.st==='pendiente'});
+  // Poblar filtros de fecha y área sin perder selección
+  var selF=document.getElementById('t4FltFecha'),selA=document.getElementById('t4FltArea'),selSt=document.getElementById('t4FltSt');
+  var fltF=selF?selF.value:'',fltA=selA?selA.value:'',fltSt=selSt?selSt.value:'';
+  if(selF){var fechas=[];reg.forEach(function(r){if(fechas.indexOf(r.f)<0)fechas.push(r.f)});fechas.sort().reverse();
+    var curF=selF.value;selF.innerHTML='<option value="">Todas las fechas</option>';
+    fechas.forEach(function(f){selF.innerHTML+='<option value="'+f+'" '+(curF===f?'selected':'')+'>'+f+'</option>'});fltF=selF.value;}
+  if(selA){var areas=[];reg.forEach(function(r){if(r.ar&&areas.indexOf(r.ar)<0)areas.push(r.ar)});areas.sort();
+    var curA=selA.value;selA.innerHTML='<option value="">Todas las áreas</option>';
+    areas.forEach(function(a){selA.innerHTML+='<option value="'+a+'" '+(curA===a?'selected':'')+'>'+a+'</option>'});fltA=selA.value;}
+  // Filtrar registros
+  var base=reg.filter(function(r){
+    if(fltF&&r.f!==fltF)return false;
+    if(fltA&&r.ar!==fltA)return false;
+    if(fltSt&&r.st!==fltSt)return false;
+    return true;
+  });
+  var ap=base.filter(function(r){return r.st==='aprobado'});
+  var pend=base.filter(function(r){return r.st==='pendiente'});
+  var rch=base.filter(function(r){return r.st==='rechazado'});
   var hN=0,hE=0;ap.forEach(function(r){if(r.tp!=='EXTRAS')hN+=r.hr;else hE+=r.hr});
-  document.getElementById('t4Sum').innerHTML='<div class="sumbox"><b>Aprobados:</b> '+ap.length+' | <b>Rechazados:</b> '+rch.length+' | <b>Pendientes:</b> '+pend.length+'<br><b>Norm:</b> '+hN.toFixed(2)+'h | <b>Ext:</b> '+hE.toFixed(2)+'h | <b>Total:</b> '+(hN+hE).toFixed(2)+'h</div>';
+  var hNAll=0,hEAll=0;base.forEach(function(r){if(r.tp!=='EXTRAS')hNAll+=r.hr;else hEAll+=r.hr});
+  // Trabajadores únicos
+  var wrksSet={};base.forEach(function(r){wrksSet[r.w]=1});
+  var html='';
+  // KPI cards
+  html+='<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:16px">';
+  function kpi(label,val,color){return'<div style="background:'+color+';border-radius:10px;padding:12px 10px;text-align:center"><div style="font-size:22px;font-weight:800;color:#1a202c">'+val+'</div><div style="font-size:10px;color:#4a5568;font-weight:600;margin-top:2px">'+label+'</div></div>';}
+  html+=kpi('Trabajadores',Object.keys(wrksSet).length,'#ebf8ff');
+  html+=kpi('Aprobados',ap.length,'#c6f6d5');
+  html+=kpi('Pendientes',pend.length,'#fef3c7');
+  html+=kpi('Rechazados',rch.length,'#fecaca');
+  html+=kpi('H. Normal',hNAll.toFixed(1)+'h','#e9d8fd');
+  html+=kpi('H. Extra',hEAll.toFixed(1)+'h','#feebc8');
+  html+=kpi('H. Total',(hNAll+hEAll).toFixed(1)+'h','#bee3f8');
+  html+='</div>';
+  if(!base.length){html+='<p style="color:#a0aec0;text-align:center;padding:16px">Sin registros con los filtros seleccionados</p>';document.getElementById('t4Sum').innerHTML=html;return;}
+  // --- Tabla por Área ---
+  var byArea={};
+  base.forEach(function(r){
+    if(!byArea[r.ar||'Sin área'])byArea[r.ar||'Sin área']={wrks:{},hN:0,hE:0,ap:0,pend:0};
+    var b=byArea[r.ar||'Sin área'];b.wrks[r.w]=1;
+    if(r.tp!=='EXTRAS')b.hN+=r.hr;else b.hE+=r.hr;
+    if(r.st==='aprobado')b.ap++;else if(r.st==='pendiente')b.pend++;
+  });
+  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Por Área</h3>';
+  html+='<div style="overflow-x:auto;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Área</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trab.</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Normal</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Extra</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Aprob.</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Pend.</th></tr></thead><tbody>';
+  Object.keys(byArea).sort().forEach(function(ar){var b=byArea[ar];
+    html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-weight:600">'+ar+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px">'+b.hN.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+b.hE.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+(b.hN+b.hE).toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px;color:#276749">'+b.ap+'</td><td style="text-align:center;padding:6px 8px;color:#92400e">'+b.pend+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  // --- Tabla por Actividad ---
+  var byAct={};
+  base.forEach(function(r){
+    var key=(r.cat||'')+'||'+(r.sub||'');
+    if(!byAct[key])byAct[key]={cat:r.cat||'',sub:r.sub||'',wrks:{},h:0,rend:0,rendN:0,ind:r.ind||''};
+    var b=byAct[key];b.wrks[r.w]=1;b.h+=r.hr;
+    if(r.rend){b.rend+=r.rend;b.rendN++;}
+  });
+  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Por Actividad</h3>';
+  html+='<div style="overflow-x:auto;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Categoría</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Actividad</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trab.</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Rendim. total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Prom/trab</th></tr></thead><tbody>';
+  Object.keys(byAct).sort().forEach(function(k){var b=byAct[k];
+    var promH=b.h/Object.keys(b.wrks).length;
+    var rendStr=b.rendN>0?b.rend+' '+indLabel(b.ind):'-';
+    html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-size:11px;color:#718096">'+b.cat+'</td><td style="padding:6px 8px;font-weight:600">'+b.sub+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+b.h.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+rendStr+'</td><td style="text-align:center;padding:6px 8px">'+promH.toFixed(1)+'h</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  // --- Detalle por trabajador ---
+  var byTrb={};
+  base.forEach(function(r){
+    if(!byTrb[r.w])byTrb[r.w]={n:r.n,ar:r.ar,hN:0,hE:0,acts:[],st:{}};
+    var b=byTrb[r.w];
+    if(r.tp!=='EXTRAS')b.hN+=r.hr;else b.hE+=r.hr;
+    if(b.acts.indexOf(r.sub)<0&&r.sub)b.acts.push(r.sub);
+    b.st[r.st]=(b.st[r.st]||0)+1;
+  });
+  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Por Trabajador</h3>';
+  html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trabajador</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Área</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Norm</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Extra</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Total</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Actividades</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Estado</th></tr></thead><tbody>';
+  Object.keys(byTrb).sort(function(a,b){return byTrb[a].n.localeCompare(byTrb[b].n)}).forEach(function(w){var b=byTrb[w];
+    var stBadge='';if(b.st.aprobado)stBadge+='<span style="background:#c6f6d5;color:#276749;border-radius:4px;padding:1px 5px;font-size:10px;margin-right:2px">✓'+b.st.aprobado+'</span>';
+    if(b.st.pendiente)stBadge+='<span style="background:#fef3c7;color:#92400e;border-radius:4px;padding:1px 5px;font-size:10px;margin-right:2px">⏳'+b.st.pendiente+'</span>';
+    if(b.st.rechazado)stBadge+='<span style="background:#fecaca;color:#991b1b;border-radius:4px;padding:1px 5px;font-size:10px">✗'+b.st.rechazado+'</span>';
+    html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-weight:600">'+b.n+'</td><td style="padding:6px 8px;font-size:11px;color:#718096">'+b.ar+'</td><td style="text-align:center;padding:6px 8px">'+b.hN.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+b.hE.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+(b.hN+b.hE).toFixed(1)+'h</td><td style="padding:6px 8px;font-size:11px;color:#4a5568">'+b.acts.join(', ')+'</td><td style="text-align:center;padding:6px 8px">'+stBadge+'</td></tr>';
+  });
+  html+='</tbody></table></div>';
+  document.getElementById('t4Sum').innerHTML=html;
 }
 function genWA(){
   var d=fechaSel,dd=d.split('-');var fechaObj=new Date(d+'T12:00:00');var dias=['Dom','Lun','Mar','Mie','Jue','Vie','Sab'];
