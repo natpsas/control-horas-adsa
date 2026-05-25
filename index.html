@@ -131,7 +131,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="stat-mini"><strong id="s1">0</strong>Activos</div>
 <div class="stat-mini"><strong id="s2">0</strong>Asignados</div>
 <div class="stat-mini" style="background:rgba(255,200,0,.3)"><strong id="s3">0</strong>Sin mód.</div>
-<button onclick="spSincronizarManual()" title="Forzar carga desde SharePoint" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px">🔄 SP</button>
+<button onclick="spSincronizarManual()" title="Sincronizar con SharePoint" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px">🔄 SP</button>
 <div id="saveStatus" style="font-size:10px;opacity:.5;color:rgba(255,255,255,.7)">💾</div>
 </div>
 </header>
@@ -148,7 +148,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="alert al-i"><b>Asignación Matutina</b> — Plan del día. Agrega actividades con +. Ajustes finales en Consolidación.</div>
 <div class="card"><h2>Asignación de Actividades</h2>
 <div class="fb"><input type="text" id="srcW" placeholder="🔍 Buscar..." oninput="renderT1()"><select id="fltA" onchange="renderT1()"><option value="">Todas las áreas</option></select>
-<button class="btn btn-p btn-sm" onclick="cargarPlantilla()">📋 Cargar plantilla</button></div>
+<button class="btn btn-p btn-sm" onclick="cargarPlantilla()">📋 Cargar plantilla</button>
+<button class="btn btn-s btn-sm" onclick="guardarAsignaciones()">💾 Guardar</button></div>
 <div id="t1List"></div>
 <button class="btn btn-s" onclick="guardarT1()" style="margin-top:12px;width:100%">💾 Guardar Asignaciones</button>
 </div></div>
@@ -165,7 +166,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="alert al-i"><b>Aprobación</b> — Todo pasa por supervisor. Extras no aprobadas no se pagan.</div>
 <div class="card"><h2>Registros Pendientes</h2>
 <div id="t3Filtros"></div>
-<table><thead><tr><th>Fecha</th><th>Trabajador</th><th>Actividad</th><th>H.Reg</th><th>H.Huella</th><th>Rend.</th><th>Módulos</th><th>Tipo</th><th>Acciones</th></tr></thead>
+<table><thead><tr><th>Fecha</th><th>Trabajador</th><th>Actividad</th><th>H.Reg</th><th>H.Huella</th><th>Rend.</th><th>Módulos</th><th>Referencia</th><th>Tipo</th><th>Acciones</th></tr></thead>
 <tbody id="t3Body"></tbody></table></div></div>
 
 <div id="t4" class="tc">
@@ -202,7 +203,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 
 <div class="card"><h2>📋 Actividades</h2>
 <div class="fb"><select id="gFltU" onchange="renderGAct()"><option value="">Todas unidades</option></select><select id="gFltC" onchange="renderGAct()"><option value="">Todas categorías</option></select></div>
-<table><thead><tr><th>Categoría</th><th>SubCategoría</th><th>Ind.</th><th>Aprobador</th><th>Acciones</th></tr></thead><tbody id="g2"></tbody></table>
+<table><thead><tr><th>Categoría</th><th>SubCategoría</th><th>Ind.</th><th>Módulo</th><th>Aprobador</th><th>Acciones</th></tr></thead><tbody id="g2"></tbody></table>
 <div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalAct()">+ Agregar</button><button class="btn btn-s btn-sm" onclick="expActCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('act')">Importar CSV</button></div>
 <input type="file" id="csvAct" accept=".csv,.xls,.xlsx" style="display:none" onchange="doImpAct(event)"></div>
 
@@ -374,6 +375,30 @@ function guardarLS(){
       spEstado('⚠️ SP: '+e.message);
       console.warn('SP guardar:',e);
     });
+  }
+}
+async function guardarAsignaciones(){
+  guardarModsEnMem();guardarModsConsol();
+  guardarLS();
+  var btn=document.querySelector('[onclick="guardarAsignaciones()"]');
+  var orig=btn?btn.textContent:'';
+  if(btn){btn.textContent='💾 Guardando…';btn.disabled=true;}
+  if(SP_READY){
+    SP_GUARDANDO=true;
+    spEstado('☁️ Guardando en SP…');
+    try{
+      await spGuardar();
+      spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+      if(btn){btn.textContent='✅ Guardado';btn.style.background='rgba(72,187,120,.4)';}
+    }catch(e){
+      spEstado('⚠️ SP: '+e.message);
+      if(btn){btn.textContent='⚠️ Error SP';}
+    }finally{
+      SP_GUARDANDO=false;
+      setTimeout(function(){if(btn){btn.textContent=orig;btn.style.background='';btn.disabled=false;}},2000);
+    }
+  }else{
+    if(btn){btn.textContent='✅ Guardado';setTimeout(function(){btn.textContent=orig;btn.disabled=false;},1500);}
   }
 }
 // =====================================================
@@ -769,100 +794,160 @@ function renderT1(){
   c.innerHTML=h;
 }
 function addAct(cod){
-  guardarModsEnMem();
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Agregar Actividad</h2>';
+  guardarModsEnMem();guardarModsConsol();
+  var trab=TRB.find(function(t){return t.codigo===cod});
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()">';
+  mh+='<div class="modal" style="max-width:480px">';
+  mh+='<div style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;color:#1a202c">+ Actividad</div>';
+  mh+='<div style="font-size:12px;color:#718096;margin-top:2px">'+(trab?trab.nombre:'')+'</div></div>';
   mh+='<input type="hidden" id="mActCod" value="'+cod+'">';
-  mh+='<div class="fg"><label>Buscar</label><input type="text" id="mSearch" placeholder="Escribe para filtrar..." oninput="mFiltrar()"></div>';
-  mh+='<div class="fr"><div class="fg"><label>Unidad <span style="color:#c53030;font-size:10px">(requerida para m\u00f3dulos)</span></label><select id="mUni" onchange="mCambioUni()"><option value="">Todas</option>';
+  // B\u00fasqueda y filtros en una l\u00ednea
+  mh+='<div style="display:flex;gap:6px;margin-bottom:8px">';
+  mh+='<input type="text" id="mSearch" placeholder="\ud83d\udd0d Buscar actividad..." oninput="mFiltrar()" style="flex:1;padding:8px;border:2px solid #e2e8f0;border-radius:7px;font-size:13px">';
+  mh+='<select id="mUni" onchange="mCambioUni()" style="padding:8px;border:2px solid #e2e8f0;border-radius:7px;font-size:12px;color:#4a5568">';
+  mh+='<option value="">Todas</option>';
   UNI.filter(function(u){return u.activo}).forEach(function(u){mh+='<option value="'+u.id+'">'+u.id+'</option>'});
-  mh+='</select></div><div class="fg"><label>Categor\u00eda</label><select id="mCat" onchange="mFiltrar()"><option value="">Todas</option></select></div></div>';
-  mh+='<div class="fg"><label>Actividades <span style="color:#718096;font-size:10px">(seleccione una o varias del mismo m\u00f3dulo)</span> <button type="button" class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllModalActs()">Todas</button></label><div class="modbox" id="mSubBox" style="max-height:190px;overflow-y:auto"><p style="color:#a0aec0;font-size:12px;padding:6px">Filtre actividades...</p></div></div>';
-  mh+='<div class="fg"><label>M\u00f3dulos (obligatorio) <button type="button" class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllModalMod()">Todos</button></label><div class="modbox" id="mModBox"><p style="color:#a0aec0;font-size:12px;padding:6px">Seleccione unidad...</p></div></div>';
-  mh+='<div style="display:flex;gap:6px;margin-top:12px"><button class="btn btn-s" onclick="confAddAct()">Agregar</button><button class="btn btn-d" onclick="cerrarModal()">Cancelar</button></div></div></div>';
-  document.getElementById('modalContainer').innerHTML=mh;mFiltrar();
+  mh+='</select></div>';
+  // Lista de actividades
+  mh+='<div id="mSubBox" style="max-height:220px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px;padding:4px;margin-bottom:10px"></div>';
+  // M\u00f3dulos por actividad (aparece din\u00e1micamente)
+  mh+='<div id="mPerActCfg"></div>';
+  // Botones
+  mh+='<div style="display:flex;gap:8px;margin-top:14px">';
+  mh+='<button class="btn btn-s" onclick="confAddAct()" style="flex:1">\u2713 Agregar</button>';
+  mh+='<button class="btn" onclick="cerrarModal()" style="background:#edf2f7;color:#4a5568">Cancelar</button>';
+  mh+='</div></div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+  mFiltrar();
 }
 function mCambioUni(){
   var uni=document.getElementById('mUni').value;
   var cats=[];ACT.forEach(function(a){if(a.activo&&(!uni||a.unidad===uni)&&cats.indexOf(a.categoria)<0)cats.push(a.categoria)});cats.sort();
   var selC=document.getElementById('mCat');selC.innerHTML='<option value="">Todas</option>';
   cats.forEach(function(c){var o=document.createElement('option');o.value=c;o.textContent=c;selC.appendChild(o)});
-  mFiltrar();mActualizarMods(uni);
+  mFiltrar();
 }
 function mFiltrar(){
-  var src=(document.getElementById('mSearch').value||'').toLowerCase(),uni=document.getElementById('mUni').value,cat=document.getElementById('mCat').value;
+  var src=(document.getElementById('mSearch').value||'').toLowerCase();
+  var uni=document.getElementById('mUni').value;
   var box=document.getElementById('mSubBox');
   var prevChecked={};[].slice.call(box.querySelectorAll('input:checked')).forEach(function(c){prevChecked[c.value]=true});
   var filtered=ACT.filter(function(a){
     if(!a.activo)return false;
-    var ms=!src||actDesc(a).toLowerCase().indexOf(src)>=0||a.subcategoria.toLowerCase().indexOf(src)>=0;
-    var mu=!uni||a.unidad===uni;var mc=!cat||a.categoria.trim()===cat.trim();
-    return ms&&mu&&mc;
+    var ms=!src||a.subcategoria.toLowerCase().indexOf(src)>=0||a.categoria.toLowerCase().indexOf(src)>=0;
+    return ms&&(!uni||a.unidad===uni);
   });
-  if(filtered.length===0){box.innerHTML='<p style="color:#a0aec0;font-size:12px;padding:6px">Sin actividades</p>';return}
-  var html='';
+  if(filtered.length===0){
+    box.innerHTML='<p style="color:#a0aec0;font-size:12px;text-align:center;padding:16px">Sin resultados</p>';
+    return;
+  }
+  // Agrupar por categor\u00eda
+  var grupos={};
   filtered.forEach(function(a){
-    var chk=prevChecked[a.id]?'checked':'';
-    html+='<div class="cbi" style="padding:3px 0"><input type="checkbox" id="mAct_'+a.id+'" value="'+a.id+'" data-uni="'+a.unidad+'" onchange="mOnActChg()" '+chk+'><label for="mAct_'+a.id+'" style="font-size:11px;line-height:1.3">'+actDesc(a)+(a.indicador?' <em style="color:#718096">('+a.indicador+')</em>':'')+'</label></div>';
+    if(!grupos[a.categoria])grupos[a.categoria]=[];
+    grupos[a.categoria].push(a);
   });
+  var html='';
+  for(var cat in grupos){
+    html+='<div style="font-size:10px;font-weight:700;color:#a0aec0;padding:6px 6px 2px;text-transform:uppercase;letter-spacing:.5px">'+cat+'</div>';
+    grupos[cat].forEach(function(a){
+      var chk=prevChecked[a.id]?'checked':'';
+      html+='<label style="display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;transition:.15s" onmouseover="this.style.background=\'#f7fafc\'" onmouseout="this.style.background=\'\'">';
+      html+='<input type="checkbox" id="mAct_'+a.id+'" value="'+a.id+'" '+chk+' onchange="mOnActChg()" style="width:15px;height:15px;flex-shrink:0">';
+      html+='<span style="font-size:12px;color:#2d3748">'+a.subcategoria+'</span>';
+      if(a.indicador)html+='<span style="font-size:10px;color:#a0aec0;margin-left:auto">'+a.indicador+'</span>';
+      html+='</label>';
+    });
+  }
   box.innerHTML=html;
+  mOnActChg();
 }
 function mOnActChg(){
-  var first=document.querySelector('#mSubBox input[type=checkbox]:checked');
-  if(!first)return;
-  var act=ACT.find(function(a){return a.id===first.value});
-  if(!act)return;
-  var uni=act.unidad;
-  var uniSel=document.getElementById('mUni');
-  if(!uniSel.value){uniSel.value=uni;mCambioUni();return}
-  mActualizarMods(uni);
+  var checked=[].slice.call(document.querySelectorAll('#mSubBox input[type=checkbox]:checked'));
+  var cfg=document.getElementById('mPerActCfg');if(!cfg)return;
+  if(checked.length===0){cfg.innerHTML='';return}
+  var html='<div style="border-top:2px solid #e2e8f0;margin-top:4px;padding-top:10px">';
+  checked.forEach(function(cb){
+    var actId=cb.value;var act=ACT.find(function(a){return a.id===actId});if(!act)return;
+    var mods=MOD.filter(function(m){return m.activo&&m.unidad===act.unidad});
+    html+='<div style="margin-bottom:10px">';
+    html+='<div style="font-size:12px;font-weight:600;color:#2d3748;margin-bottom:5px">'+act.subcategoria+'</div>';
+    if(!act.usa_modulo){
+      html+='<span style="font-size:11px;color:#48bb78;background:#f0fff4;padding:3px 8px;border-radius:5px">\u2713 Sin m\u00f3dulo requerido</span>';
+    }else if(mods.length===0){
+      html+='<span style="font-size:11px;color:#c53030">\u26a0 Sin m\u00f3dulos en '+act.unidad+'</span>';
+    }else{
+      html+='<div style="display:flex;flex-wrap:wrap;gap:6px" id="mmod_'+actId+'">';
+      mods.forEach(function(m){
+        var autoChk=mods.length===1;
+        html+='<label style="display:flex;align-items:center;gap:4px;background:'+(autoChk?'#ebf8ff':'#f7fafc')+';border:1px solid '+(autoChk?'#90cdf4':'#e2e8f0')+';border-radius:6px;padding:4px 10px;cursor:pointer;font-size:11px">';
+        html+='<input type="checkbox" value="'+m.id+'" '+(autoChk?'checked':'')+' style="width:13px;height:13px">'+m.nombre+'</label>';
+      });
+      html+='</div>';
+    }
+    html+='</div>';
+  });
+  html+='</div>';
+  cfg.innerHTML=html;
 }
 function selAllModalActs(){
   var cbs=document.querySelectorAll('#mSubBox input[type=checkbox]');
   var all=true;cbs.forEach(function(c){if(!c.checked)all=false});
-  cbs.forEach(function(c){c.checked=!all});
-  if(!all){var first=document.querySelector('#mSubBox input[type=checkbox]:checked');if(first)mOnActChg()}
+  cbs.forEach(function(c){c.checked=!all});mOnActChg();
 }
-function mActualizarMods(uni){
-  var mbox=document.getElementById('mModBox');if(!uni){mbox.innerHTML='<p style="color:#a0aec0;font-size:12px;padding:6px">Seleccione actividad...</p>';return}
-  var mods=MOD.filter(function(m){return m.activo&&m.unidad===uni});
-  if(mods.length===0){mbox.innerHTML='<p style="color:#a0aec0;font-size:12px;padding:6px">Sin m\u00f3dulos</p>';return}
-  var html='';mods.forEach(function(m){var chk=mods.length===1?'checked':'';html+='<div class="cbi"><input type="checkbox" id="mMod_'+m.id+'" value="'+m.id+'" '+chk+'><label for="mMod_'+m.id+'">'+m.nombre+'</label></div>'});mbox.innerHTML=html;
-}
-function selAllModalMod(){var cbs=document.querySelectorAll('#mModBox input[type=checkbox]');var all=true;cbs.forEach(function(c){if(!c.checked)all=false});cbs.forEach(function(c){c.checked=!all})}
 function confAddAct(){
   var cod=document.getElementById('mActCod').value;
   var actIds=[].slice.call(document.querySelectorAll('#mSubBox input:checked')).map(function(c){return c.value});
-  var selMods=[].slice.call(document.querySelectorAll('#mModBox input:checked')).map(function(c){return c.value});
   if(actIds.length===0){alert('Selecciona al menos una actividad');return}
-  if(selMods.length===0){alert('Selecciona al menos un m\u00f3dulo');return}
-  // Verificar que todas las actividades sean de la misma unidad
-  var unis=actIds.map(function(id){var a=ACT.find(function(x){return x.id===id});return a?a.unidad:''});
-  var uniqueUnis=unis.filter(function(u,i,arr){return arr.indexOf(u)===i});
-  if(uniqueUnis.length>1){alert('Solo puedes seleccionar actividades de la misma unidad/m\u00f3dulo.\nTienes actividades de: '+uniqueUnis.join(', '));return}
+  // Validar m\u00f3dulos por actividad
+  var sinMod=false;
+  actIds.forEach(function(actId){
+    var act=ACT.find(function(a){return a.id===actId});if(!act||!act.usa_modulo)return;
+    var modBox=document.getElementById('mmod_'+actId);
+    var sel=modBox?[].slice.call(modBox.querySelectorAll('input:checked')):[];
+    if(sel.length===0)sinMod=true;
+  });
+  if(sinMod){alert('Hay actividades que requieren m\u00f3dulo sin seleccionar.\nSelecciona al menos un m\u00f3dulo para cada actividad.');return}
   // Verificar si ya est\u00e1 consolidado
   var yaConsolidado=reg.some(function(r){return r.w===cod&&r.f===fechaSel});
   if(yaConsolidado){alert('Este trabajador ya tiene registros consolidados para '+fechaSel+'.\nUsa "Editar" en la pesta\u00f1a Consolidaci\u00f3n para modificar.');return}
-  // Filtrar actividades duplicadas
+  // Filtrar duplicadas
   var duplicadas=[];
   actIds=actIds.filter(function(actId){
     var dup=asg.find(function(a){return a.w===cod&&a.f===fechaSel&&a.act===actId&&!a.na});
     if(dup){duplicadas.push(actId);return false}return true;
   });
-  if(duplicadas.length>0&&actIds.length===0){alert('Las actividades seleccionadas ya est\u00e1n asignadas a este trabajador para '+fechaSel+'.');return}
-  if(duplicadas.length>0)alert('Aviso: '+duplicadas.length+' actividad(es) ya existentes fueron omitidas.');
+  if(duplicadas.length>0&&actIds.length===0){alert('Las actividades seleccionadas ya est\u00e1n asignadas.');return}
+  if(duplicadas.length>0)alert('Aviso: '+duplicadas.length+' actividad(es) ya existente(s) omitidas.');
   if(actIds.length===0)return;
-  // Calcular jornal seg\u00fan d\u00eda y trabajador
+  // Agregar cada actividad con sus propios m\u00f3dulos
+  actIds.forEach(function(actId){
+    var act=ACT.find(function(a){return a.id===actId});
+    var modBox=document.getElementById('mmod_'+actId);
+    var selMods=modBox?[].slice.call(modBox.querySelectorAll('input:checked')).map(function(c){return c.value}):[];
+    asg.push({f:fechaSel,w:cod,act:actId,uni:act?act.unidad:'',h:0,x:false,na:false,mods:selMods});
+  });
+  // Redistribuir horas equitativamente entre TODAS las actividades del trabajador
   var trab=TRB.find(function(t){return t.codigo===cod});
   var fechaObj=new Date(fechaSel+'T12:00:00');var diaSem=fechaObj.getDay();
   var jornal=diaSem===6?4:diaSem===0?0:(trab&&trab.horas_base?trab.horas_base:8);
-  var hPorAct=actIds.length>0?Math.round((jornal/actIds.length)*2)/2:0;
-  actIds.forEach(function(actId){
-    var act=ACT.find(function(a){return a.id===actId});
-    asg.push({f:fechaSel,w:cod,act:actId,uni:act?act.unidad:'',h:hPorAct,x:false,na:false,mods:selMods});
-  });
-  guardarLS();cerrarModal();stats();renderT1();
+  var todasActs=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});
+  var hPorAct=todasActs.length>0?Math.round((jornal/todasActs.length)*2)/2:0;
+  todasActs.forEach(function(a){a.h=hPorAct});
+  guardarLS();cerrarModal();stats();renderT1();renderT2();
 }
-function delAct(cod,idx){guardarModsEnMem();var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});var i=asg.indexOf(ex[idx]);if(i>=0){asg.splice(i,1);guardarLS();renderT1();stats()}}
+function delAct(cod,idx){
+  guardarModsEnMem();guardarModsConsol();
+  var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});
+  var i=asg.indexOf(ex[idx]);if(i>=0){asg.splice(i,1);}
+  // Redistribuir horas entre las restantes
+  var trab=TRB.find(function(t){return t.codigo===cod});
+  var fechaObj=new Date(fechaSel+'T12:00:00');var diaSem=fechaObj.getDay();
+  var jornal=diaSem===6?4:diaSem===0?0:(trab&&trab.horas_base?trab.horas_base:8);
+  var restantes=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});
+  if(restantes.length>0){var hPorAct=Math.round((jornal/restantes.length)*2)/2;restantes.forEach(function(a){a.h=hPorAct});}
+  guardarLS();renderT1();renderT2();stats();
+}
 function updH(cod,idx,val){guardarModsEnMem();var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});var i=asg.indexOf(ex[idx]);if(i>=0){asg[i].h=parseFloat(val)||0;guardarLS()}}
 function updX(cod,idx,val){guardarModsEnMem();var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});var i=asg.indexOf(ex[idx]);if(i>=0){asg[i].x=val;guardarLS()}}
 function toggleNA(cod){guardarModsEnMem();var ch=document.getElementById('na_'+cod);var nd=document.getElementById('naD_'+cod);var af=document.getElementById('af_'+cod);
@@ -1060,7 +1145,8 @@ function renderT2(){
       if(tieneR)h+='<div class="fg"><label>Rend. '+(act.desc_rend||act.indicador)+'</label><input type="number" id="rend_'+cod+'_'+i+'" value="'+(a.rend||'')+'" min="0" step="1" placeholder="Cantidad"></div>';
       h+='</div></div>'});
     h+='<div class="fr" style="margin-top:7px"><div class="fg"><label>Horas totales (m\u00e1x: '+maxN+'h)</label><input type="number" id="ht_'+cod+'" value="'+totalH+'" min="0" max="16" step="0.5"></div>';
-    h+='<div class="fg"><label>Obs.</label><input type="text" id="obs_'+cod+'" placeholder="Opcional"></div>';
+    h+='<div class="fg"><label>Referencia <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="ref_'+cod+'" placeholder="Ej: OP-001, Lote A..."></div>';
+    h+='<div class="fg"><label>Obs. <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="obs_'+cod+'" placeholder="Opcional"></div>';
     h+='<div class="fg" style="display:flex;align-items:flex-end"><button class="btn btn-s" onclick="consolidar(\''+cod+'\')">Confirmar</button></div></div>';
     h+='<button class="add-btn" onclick="addAct(\''+cod+'\')">Ajustar: + actividad</button></div>'});c.innerHTML=h;
 }
@@ -1092,7 +1178,9 @@ function desconsolidar(cod){var trb=TRB.find(function(t){return t.codigo===cod})
 function consolidar(cod){
   var d=fechaSel;var yaC=reg.filter(function(r){return r.w===cod&&r.f===d});if(yaC.length>0){alert('Ya consolidado. Usa Editar.');return}
   var htEl=document.getElementById('ht_'+cod);if(!htEl){alert('Error');return}var hrs=parseFloat(htEl.value)||0;if(hrs<=0){alert('Horas > 0');return}
-  var obsEl=document.getElementById('obs_'+cod);var obs=obsEl?obsEl.value:'';var acts2=asg.filter(function(a){return a.w===cod&&a.f===d&&!a.na});if(acts2.length===0){alert('Sin actividades');return}
+  var obsEl=document.getElementById('obs_'+cod);var obs=obsEl?obsEl.value:'';
+  var refEl=document.getElementById('ref_'+cod);var ref=refEl?refEl.value.trim():'';
+  var acts2=asg.filter(function(a){return a.w===cod&&a.f===d&&!a.na});if(acts2.length===0){alert('Sin actividades');return}
   var hu=(hue[d]||{})[cod];var trb=TRB.find(function(t){return t.codigo===cod});var fechaObj=new Date(d+'T12:00:00');var diaSem=fechaObj.getDay();
   var maxN=diaSem===6?4:diaSem===0?0:8;var dias=['Dom','Lun','Mar','Mi\u00e9','Jue','Vie','S\u00e1b'];
   if(diaSem===0&&!confirm('DOMINGO: todo EXTRAS'))return;if(hrs>maxN&&maxN>0&&!confirm(dias[diaSem]+': '+hrs+'h = '+maxN+'h + '+(hrs-maxN).toFixed(1)+'h ext'))return;
@@ -1112,11 +1200,11 @@ function consolidar(cod){
   acts2.forEach(function(a){var act=ACT.find(function(x){return x.id===a.act});
     reg.push({f:d,w:cod,n:trb.nombre,ar:trb.area,act:a.act,uni:a.uni,cat:act?act.categoria:'',sub:act?act.subcategoria:'',
       h:a.h,hr:hNorm/acts2.length,rend:a.rend||null,ind:act?act.indicador:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
-      mods:a.mods||[],obs:obs,tp:'NORMAL',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:''})});
+      mods:a.mods||[],obs:obs,ref:ref,tp:'NORMAL',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:''})});
   if(hExt>0){var a0=acts2[0],act0=ACT.find(function(x){return x.id===a0.act});
     reg.push({f:d,w:cod,n:trb.nombre,ar:trb.area,act:a0.act,uni:a0.uni,cat:act0?act0.categoria:'',sub:act0?act0.subcategoria:'',
       h:hExt,hr:hExt,rend:null,ind:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
-      mods:a0.mods||[],obs:'EXTRAS - '+obs,tp:'EXTRAS',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:''})}
+      mods:a0.mods||[],obs:'EXTRAS - '+obs,ref:ref,tp:'EXTRAS',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:''})}
   guardarLS();stats();alert('OK: '+hNorm.toFixed(1)+'h'+(hExt>0?' + '+hExt.toFixed(1)+'h ext':''));renderT2();renderT1();
 }
 
@@ -1156,10 +1244,11 @@ function renderT3(){
     html+='<td style="font-size:10px">'+(act?actDesc(act):'')+'</td><td>'+r.hr.toFixed(1)+'h</td>';
     html+='<td>'+(r.hhu?r.hhu+'h':'-')+'</td>';
     html+='<td>'+(r.rend?r.rend+' '+(r.ind||''):'-')+'</td><td style="font-size:10px">'+(r.mods||[]).join(', ')+'</td>';
+    html+='<td style="font-size:10px;color:#4a5568">'+(r.ref||'-')+'</td>';
     html+='<td>'+(r.tp==='EXTRAS'?'<span class="badge b-ex">EXT</span>':excede?'<span class="badge b-w">!</span>':'<span class="badge b-ok">OK</span>')+'</td>';
     html+='<td>'+(puede?'<button class="btn btn-s btn-sm" onclick="aprobar('+ri+')">Aprobar</button> <button class="btn btn-d btn-sm" onclick="rechazar('+ri+')">Rechazar</button> <button class="btn btn-i btn-sm" onclick="editarReg('+ri+')">Editar</button>':'<span style="font-size:10px;color:#a0aec0">Sin permiso</span>')+'</td></tr>';
     // Fila expandible de edicion
-    html+='<tr id="edit_'+ri+'" style="display:none"><td colspan="10" style="background:#f7fafc;padding:12px"><div class="fr">';
+    html+='<tr id="edit_'+ri+'" style="display:none"><td colspan="11" style="background:#f7fafc;padding:12px"><div class="fr">';
     html+='<div class="fg"><label>Horas</label><input type="number" id="eh_'+ri+'" value="'+r.hr+'" min="0" max="16" step="0.5"></div>';
     html+='<div class="fg"><label>Rendimiento</label><input type="number" id="er_'+ri+'" value="'+(r.rend||'')+'" min="0" step="1"></div>';
     var actR=ACT.find(function(a){return a.id===r.act});var uniR=actR?actR.unidad:'';var modsR=MOD.filter(function(m){return m.activo&&m.unidad===uniR});var selMR=r.mods||[];
@@ -1167,6 +1256,7 @@ function renderT3(){
     if(modsR.length>0){modsR.forEach(function(m){var chk=selMR.indexOf(m.id)>=0;html+='<div class="cbi"><input type="checkbox" value="'+m.id+'" '+(chk?'checked':'')+'><label>'+m.nombre+'</label></div>'})}
     else{html+='<div style="font-size:11px;color:#718096">Sin m\u00f3dulos para '+uniR+'</div>'}
     html+='</div></div>';
+    html+='<div class="fg"><label>Referencia</label><input type="text" id="eref_'+ri+'" value="'+(r.ref||'')+'" placeholder="Opcional"></div>';
     html+='<div class="fg"><label>Obs.</label><input type="text" id="eo_'+ri+'" value="'+(r.obs||'')+'"></div>';
     html+='</div><div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-s btn-sm" onclick="guardarEdicion('+ri+')">Guardar</button><button class="btn btn-sm" style="background:#edf2f7" onclick="cancelarEdicion('+ri+')">Cancelar</button></div></td></tr>';
   });
@@ -1184,6 +1274,7 @@ function guardarEdicion(ri){
   reg[ri].rend=parseFloat(document.getElementById('er_'+ri).value)||null;
   var emBox=document.getElementById('em_'+ri);reg[ri].mods=emBox?[].slice.call(emBox.querySelectorAll('input:checked')).map(function(c){return c.value}):[];
   reg[ri].obs=document.getElementById('eo_'+ri).value;
+  var eref=document.getElementById('eref_'+ri);if(eref)reg[ri].ref=eref.value.trim();
   guardarLS();renderT3();
 }
 function aprobar(ri){
@@ -1222,8 +1313,8 @@ function genWA(){
 }
 function copiarWA(){var ta=document.getElementById('waText');ta.select();navigator.clipboard.writeText(ta.value).then(function(){alert('Copiado')}).catch(function(){document.execCommand('copy');alert('Copiado')})}
 function expCSV(){
-  var csv='Fecha,Codigo,Trabajador,Area,Estado,Unidad,Categoria,SubCategoria,Tipo,H_Asig,H_Reg,Rend,Indicador,H_Huella,Modulos,Motivo,Obs,Aprobacion,Aprobador\n';
-  reg.forEach(function(r){var act=ACT.find(function(a){return a.id===r.act});csv+=r.f+',"'+r.w+'","'+r.n+'","'+r.ar+'",PRESENTE,'+r.uni+',"'+(r.cat||'')+'","'+(r.sub||'')+'",'+r.tp+','+r.h+','+r.hr.toFixed(2)+','+(r.rend||'')+',"'+(r.ind||'')+'",'+(r.hhu||'')+',"'+(r.mods||[]).join(';')+'",,"'+(r.obs||'').replace(/"/g,'""')+'",'+r.st+','+(act?act.aprobador:'')+'\n'});
+  var csv='Fecha,Codigo,Trabajador,Area,Estado,Unidad,Categoria,SubCategoria,Tipo,H_Asig,H_Reg,Rend,Indicador,H_Huella,Modulos,Motivo,Referencia,Obs,Aprobacion,Aprobador\n';
+  reg.forEach(function(r){var act=ACT.find(function(a){return a.id===r.act});csv+=r.f+',"'+r.w+'","'+r.n+'","'+r.ar+'",PRESENTE,'+r.uni+',"'+(r.cat||'')+'","'+(r.sub||'')+'",'+r.tp+','+r.h+','+r.hr.toFixed(2)+','+(r.rend||'')+',"'+(r.ind||'')+'",'+(r.hhu||'')+',"'+(r.mods||[]).join(';')+'",,"'+(r.ref||'')+'","'+(r.obs||'').replace(/"/g,'""')+'",'+r.st+','+(act?act.aprobador:'')+'\n'});
   asg.filter(function(a){return a.na}).forEach(function(a){var trb=TRB.find(function(t){return t.codigo===a.w});csv+=a.f+',"'+a.w+'","'+(trb?trb.nombre:'')+'","'+(trb?trb.area:'')+'",NO_ASISTIO,,,,,0,,,,,,'+(a.mt||'')+',,\n'});
   if(!reg.length&&!asg.filter(function(a){return a.na}).length){alert('Sin datos');return}
   var b=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='registros-'+fechaSel+'.csv';l.click();
@@ -1458,7 +1549,12 @@ function guardarPermisos(){
 function renderGTrb(){var html='';var adm=esAdmin();TRB.forEach(function(t){html+='<tr style="'+(t.activo?'':'opacity:.5')+'"><td>'+t.codigo+'</td><td>'+t.nombre+'</td><td>'+t.area+'</td><td>'+(adm?(t.actividad_base?'<span class="badge b-ok" style="font-size:9px">Base</span> ':'')+' <button class="btn btn-i btn-sm" onclick="modalTrb(\''+t.codigo+'\')">Ed</button> <button class="btn btn-sm" style="background:#dbeafe;font-size:10px" onclick="modalConfigBase(\''+t.codigo+'\')">Base</button> <button class="btn btn-d btn-sm" onclick="togTrb(\''+t.codigo+'\')">'+(t.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(t.activo?'#c6f6d5':'#e2e8f0')+';color:'+(t.activo?'#276749':'#718096')+';font-size:9px">'+(t.activo?'Activo':'Inactivo')+'</span>')+'</td></tr>'});document.getElementById('g1').innerHTML=html}
 function renderGAct(){var uni=document.getElementById('gFltU').value;var cat=document.getElementById('gFltC').value;var list=ACT.filter(function(a){return(!uni||a.unidad===uni)&&(!cat||a.categoria===cat)});
   var html='';var adm=esAdmin();list.slice(0,60).forEach(function(a){
-    html+='<tr style="'+(a.activo?'':'opacity:.5')+'"><td style="font-size:10px">'+a.categoria+'</td><td style="font-size:10px">'+a.subcategoria+'</td><td style="font-size:10px">'+(a.indicador||'-')+'</td><td>';
+    html+='<tr style="'+(a.activo?'':'opacity:.5')+'"><td style="font-size:10px">'+a.categoria+'</td><td style="font-size:10px">'+a.subcategoria+'</td><td style="font-size:10px">'+(a.indicador||'-')+'</td>';
+    // Columna Módulo
+    html+='<td style="text-align:center">';
+    if(adm){html+='<button class="btn btn-sm" style="font-size:10px;background:'+(a.usa_modulo?'#c6f6d5;color:#276749':'#fecaca;color:#991b1b')+'" onclick="togUsaModulo(\''+a.id+'\')">'+(a.usa_modulo?'Sí':'No')+'</button>';}
+    else{html+='<span style="font-size:11px">'+(a.usa_modulo?'✅':'❌')+'</span>';}
+    html+='</td><td>';
     if(adm){html+='<select style="font-size:10px;padding:2px;border:1px solid #e2e8f0;border-radius:4px;width:100%" onchange="cambiarAprobador(\''+a.id+'\',this.value)">';html+='<option value="ADMIN" '+(a.aprobador==='ADMIN'?'selected':'')+'>Admin</option>';CARGOS.forEach(function(c2){html+='<option value="'+c2.id+'" '+(a.aprobador===c2.id?'selected':'')+'>'+c2.nombre+'</option>'});html+='</select>';}
     else{var cargoN=CARGOS.find(function(c2){return c2.id===a.aprobador});html+='<span style="font-size:10px">'+(cargoN?cargoN.nombre:a.aprobador||'-')+'</span>';}
     html+='</td><td>'+(adm?'<button class="btn btn-d btn-sm" onclick="togAct(\''+a.id+'\')">'+( a.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(a.activo?'#c6f6d5':'#e2e8f0')+';font-size:9px">'+(a.activo?'Act':'Des')+'</span>')+'</td></tr>'});
@@ -1487,6 +1583,7 @@ function soloAdmin(){if(!esAdmin()){alert('Solo el Administrador puede realizar 
 function togTrb(cod){if(!soloAdmin())return;var t=TRB.find(function(x){return x.codigo===cod});if(t){t.activo=!t.activo;guardarLS();renderGTrb()}}
 function cambiarAprobador(id,cargo){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.aprobador=cargo;guardarLS()}}
 function togAct(id){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.activo=!a.activo;guardarLS();renderGAct()}}
+function togUsaModulo(id){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.usa_modulo=!a.usa_modulo;guardarLS();renderGAct();}}
 function togMod(id){if(!soloAdmin())return;var m=MOD.find(function(x){return x.id===id});if(m){m.activo=!m.activo;guardarLS();renderGMod()}}
 function delUsr(u){if(!soloAdmin())return;if(confirm('Eliminar?')){usr=usr.filter(function(x){return x.usr!==u});guardarLS();renderGUsr()}}
 // MODALES
