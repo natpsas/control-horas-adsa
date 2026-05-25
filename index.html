@@ -43,6 +43,8 @@ header h1{font-size:22px}header p{opacity:.9;font-size:12px}
 .cbi{display:flex;align-items:center;padding:3px}.cbi input{width:15px;height:15px;margin-right:6px}.cbi label{font-size:12px;cursor:pointer}
 .add-btn{background:#eff6ff;border:2px dashed #93c5fd;color:#1e40af;padding:7px;border-radius:7px;cursor:pointer;font-weight:600;font-size:12px;width:100%;margin-top:5px}
 .add-btn:hover{background:#dbeafe}
+/* Ocultar botones de acción admin en Gestión para usuarios no-admin */
+.no-admin-gestion .gestion-admin-actions{display:none!important}
 .alert{padding:9px 12px;border-radius:7px;margin-bottom:10px;border-left:4px solid;font-size:12px}
 .al-i{background:#e8f4fd;color:#2c5282;border-color:#4299e1}
 .al-w{background:#feebc8;color:#c05621;border-color:#ed8936}
@@ -194,26 +196,26 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="grid-2">
 <div class="card"><h2>👥 Trabajadores</h2>
 <table><thead><tr><th>Cód</th><th>Nombre</th><th>Área</th><th>Acciones</th></tr></thead><tbody id="g1"></tbody></table>
-<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalTrb()">+ Agregar</button><button class="btn btn-s btn-sm" onclick="expTrbCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('trb')">Importar CSV</button></div>
+<div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalTrb()">+ Agregar</button><button class="btn btn-s btn-sm" onclick="expTrbCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('trb')">Importar CSV</button></div>
 <input type="file" id="csvTrb" accept=".csv,.xls,.xlsx" style="display:none" onchange="doImpTrb(event)"></div>
 
 <div class="card"><h2>📋 Actividades</h2>
 <div class="fb"><select id="gFltU" onchange="renderGAct()"><option value="">Todas unidades</option></select><select id="gFltC" onchange="renderGAct()"><option value="">Todas categorías</option></select></div>
 <table><thead><tr><th>Categoría</th><th>SubCategoría</th><th>Ind.</th><th>Aprobador</th><th>Acciones</th></tr></thead><tbody id="g2"></tbody></table>
-<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalAct()">+ Agregar</button><button class="btn btn-s btn-sm" onclick="expActCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('act')">Importar CSV</button></div>
+<div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalAct()">+ Agregar</button><button class="btn btn-s btn-sm" onclick="expActCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('act')">Importar CSV</button></div>
 <input type="file" id="csvAct" accept=".csv,.xls,.xlsx" style="display:none" onchange="doImpAct(event)"></div>
 
 <div class="card"><h2>📦 Módulos</h2>
 <table><thead><tr><th>ID</th><th>Nombre</th><th>Unidad</th><th>Acciones</th></tr></thead><tbody id="g3"></tbody></table>
-<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalMod()">+ Agregar</button><button class="btn btn-s btn-sm" onclick="expModCSV()">Exportar</button><button class="btn btn-i btn-sm" onclick="impInteligente('mod')">Importar</button></div></div>
+<div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalMod()">+ Agregar</button><button class="btn btn-s btn-sm" onclick="expModCSV()">Exportar</button><button class="btn btn-i btn-sm" onclick="impInteligente('mod')">Importar</button></div></div>
 
 <div class="card"><h2>👤 Usuarios</h2>
 <table><thead><tr><th>Usuario</th><th>Rol</th><th>Código</th><th>Acciones</th></tr></thead><tbody id="g4"></tbody></table>
-<button class="btn btn-p btn-sm" onclick="modalUsr()" style="margin-top:8px">+ Agregar</button></div>
+<div class="gestion-admin-actions" style="margin-top:8px"><button class="btn btn-p btn-sm" onclick="modalUsr()">+ Agregar</button></div></div>
 
 <div class="card"><h2>🏷️ Cargos de Aprobación</h2>
 <table><thead><tr><th>ID</th><th>Nombre</th><th>Personas</th><th>Act.</th><th>Acciones</th></tr></thead><tbody id="g5"></tbody></table>
-<div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalNuevoCargo()">+ Nuevo cargo</button><button class="btn btn-s btn-sm" onclick="expCargosCSV()">Exportar</button><button class="btn btn-i btn-sm" onclick="impInteligente('cargos')">Importar</button></div>
+<div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalNuevoCargo()">+ Nuevo cargo</button><button class="btn btn-s btn-sm" onclick="expCargosCSV()">Exportar</button><button class="btn btn-i btn-sm" onclick="impInteligente('cargos')">Importar</button></div>
 </div>
 </div></div>
 
@@ -507,37 +509,54 @@ async function spCargar(){
 async function spGuardar(){
   if(!SP_READY||SP_GUARDANDO)return;SP_GUARDANDO=true;
   try{
-    // Config compartida (sobreescritura normal)
-    var config={'TRB':TRB,'ACT':ACT,'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva};
-    for(var k in config)await spEscribirItem(k,config[k]);
-    // asg — merge: conservar otras fechas de SP, reemplazar solo fechaSel local
+    // Config centralizada — SOLO ADMIN puede escribirla a SP
+    if(usuarioLogueado==='Admin'){
+      var config={'TRB':TRB,'ACT':ACT,'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva};
+      for(var k in config)await spEscribirItem(k,config[k]);
+    }
+    // asg — merge seguro: solo escribe si hay datos locales para la fecha,
+    // o si SP también está vacío para ese día (evita pisar datos de otros usuarios)
     var itAsg=await spLeerItem('asg');
     var spAsg=(itAsg&&itAsg.Valor)?JSON.parse(itAsg.Valor):[];
-    var asgMerged=spAsg.filter(function(a){return a.f!==fechaSel}).concat(asg.filter(function(a){return a.f===fechaSel}));
-    await spEscribirItem('asg',asgMerged);
-    // reg — merge por fecha
+    var localAsg=asg.filter(function(a){return a.f===fechaSel});
+    var spAsgFecha=spAsg.filter(function(a){return a.f===fechaSel});
+    if(localAsg.length>0||spAsgFecha.length===0){
+      var asgMerged=spAsg.filter(function(a){return a.f!==fechaSel}).concat(localAsg);
+      await spEscribirItem('asg',asgMerged);
+    }
+    // reg — mismo criterio
     var itReg=await spLeerItem('reg');
     var spReg=(itReg&&itReg.Valor)?JSON.parse(itReg.Valor):[];
-    var regMerged=spReg.filter(function(r){return r.f!==fechaSel}).concat(reg.filter(function(r){return r.f===fechaSel}));
-    await spEscribirItem('reg',regMerged);
-    // hue — merge por clave de fecha (objeto)
+    var localReg=reg.filter(function(r){return r.f===fechaSel});
+    var spRegFecha=spReg.filter(function(r){return r.f===fechaSel});
+    if(localReg.length>0||spRegFecha.length===0){
+      var regMerged=spReg.filter(function(r){return r.f!==fechaSel}).concat(localReg);
+      await spEscribirItem('reg',regMerged);
+    }
+    // hue — solo escribe la fecha actual si hay datos locales para ese día
     var itHue=await spLeerItem('hue');
     var spHue=(itHue&&itHue.Valor)?JSON.parse(itHue.Valor):{};
-    var hueMerged=Object.assign({},spHue);
-    if(hue[fechaSel]!==undefined)hueMerged[fechaSel]=hue[fechaSel];
-    await spEscribirItem('hue',hueMerged);
+    if(hue[fechaSel]!==undefined&&Object.keys(hue[fechaSel]||{}).length>0){
+      var hueMerged=Object.assign({},spHue);
+      hueMerged[fechaSel]=hue[fechaSel];
+      await spEscribirItem('hue',hueMerged);
+    }
   }finally{SP_GUARDANDO=false}
 }
 
 function spSincronizarManual(){
   if(!SP_READY){spLoginYConectar();return;}
-  spEstado('☁️ Sincronizando...');
-  spCargar().then(function(){
-    poblarFiltros();stats();renderT1();renderGestion();
-    var a=document.querySelector('.tc.active');
-    if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
-    spEstado('☁️ Sincronizado '+new Date().toLocaleTimeString(),true);
-  }).catch(function(e){alert('Error al sincronizar:\n'+e.message)});
+  spEstado('☁️ Guardando...');
+  // Primero guardar datos locales a SP (con merge), luego cargar todo
+  spGuardar().catch(function(){}).finally(function(){
+    spEstado('☁️ Sincronizando...');
+    spCargar().then(function(){
+      poblarFiltros();stats();renderT1();renderGestion();
+      var a=document.querySelector('.tc.active');
+      if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
+      spEstado('☁️ Sincronizado '+new Date().toLocaleTimeString(),true);
+    }).catch(function(e){alert('Error al sincronizar:\n'+e.message)});
+  });
 }
 
 function modalConexionPA(){
@@ -581,7 +600,9 @@ function stats(){
     if(a.f!==fechaSel||a.na)return;
     if(!seen[a.w])seen[a.w]={ok:false,any:true};
     seen[a.w].any=true;
+    var actObj=ACT.find(function(x){return x.id===a.act});
     if(a.mods&&a.mods.length>0)seen[a.w].ok=true;
+    else if(actObj&&!actObj.usa_modulo)seen[a.w].ok=true;
   });
   for(var w in seen){if(seen[w].ok)asignados++;else sinMod++}
   document.getElementById('s2').textContent=asignados;
@@ -696,7 +717,7 @@ function renderT1(){
         h+='<div class="ar"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><div style="flex:1"><b style="font-size:11px">'+desc+'</b></div><button class="btn btn-d btn-sm" onclick="delAct(\''+t.codigo+'\','+i+')">X</button></div>';
         h+='<div class="fr"><div class="fg"><label>Horas</label><input type="number" id="h_'+t.codigo+'_'+i+'" value="'+(a.h||0)+'" min="0" max="16" step="0.5" onchange="updH(\''+t.codigo+'\','+i+',this.value)"></div>';
         h+='<div class="fg" style="display:flex;align-items:center;padding-top:22px"><label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer"><input type="checkbox" id="x_'+t.codigo+'_'+i+'" style="width:16px;height:16px" '+(a.x?'checked':'')+' onchange="updX(\''+t.codigo+'\','+i+',this.checked)"> Extras</label></div></div>';
-        if(modsUni.length>0){var autoSel=modsUni.length===1;
+        if(act&&act.usa_modulo&&modsUni.length>0){var autoSel=modsUni.length===1;
           h+='<div class="fg" style="margin-top:5px"><label>M\u00f3dulos'+(modsUni.length>1?' <button class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllMod(\''+t.codigo+'_'+i+'\')">Todos</button>':'')+'</label><div class="modbox" id="mb_'+t.codigo+'_'+i+'">';
           modsUni.forEach(function(m){var chk=autoSel||(selM.indexOf(m.id)>=0);h+='<div class="cbi"><input type="checkbox" id="md_'+t.codigo+'_'+i+'_'+m.id+'" value="'+m.id+'" '+(chk?'checked':'')+'><label for="md_'+t.codigo+'_'+i+'_'+m.id+'">'+m.nombre+'</label></div>'});h+='</div></div>'}
         h+='</div>'});
@@ -814,7 +835,7 @@ function cargarPlantilla(){
     if(!t.activo||!t.actividad_base)return;
     if(asg.find(function(a){return a.w===t.codigo&&a.f===d}))return;
     var actBase=ACT.find(function(x){return x.id===t.actividad_base});
-    if(!actBase)return;
+    if(!actBase||!actBase.activo)return;
     var modsBase=t.mods_base||[];
     var fechaObj=new Date(d+'T12:00:00');var diaSem=fechaObj.getDay();
     var hBase=diaSem===6?4:diaSem===0?0:(t.horas_base||8);
@@ -974,7 +995,7 @@ function renderT2(){
       h+='<button class="btn btn-i btn-sm" onclick="desconsolidar(\''+cod+'\')">\u270f\ufe0f Editar</button></div>';return}
     // Alertas de huella
     var alertaH=hu&&totalH>hu.h;
-    var sinModulo=acts.some(function(a){return !a.mods||a.mods.length===0});
+    var sinModulo=acts.some(function(a){var actObj=ACT.find(function(x){return x.id===a.act});return actObj&&actObj.usa_modulo&&(!a.mods||a.mods.length===0);});
     h+='<div class="wc" style="'+(alertaH?'border-color:#f87171;border-width:3px':sinModulo?'border-color:#f59e0b;border-width:2px':'')+'"><h3>'+trb.nombre+' '+(hu?'<span class="badge b-ok">Huella: '+hu.h+'h ('+hu.e+'\u2192'+hu.s+')</span>':'<span class="badge" style="background:#e2e8f0;color:#4a5568">Sin huella</span>');
     if(totalH>maxN)h+=' <span class="badge b-ex">'+(totalH-maxN).toFixed(1)+'h ext</span>';
     if(sinModulo)h+=' <span class="badge b-w">FALTA M\u00d3DULO</span>';
@@ -986,11 +1007,11 @@ function renderT2(){
     acts.forEach(function(a,i){var act=ACT.find(function(x){return x.id===a.act});var tieneR=act&&act.indicador;
       h+='<div class="ar"><b style="font-size:11px">'+(act?actDesc(act):'')+'</b>';
       var uniA=a.uni||'';var modsA=MOD.filter(function(m){return m.activo&&m.unidad===uniA});var selMA=a.mods||[];
-      if(modsA.length>0){
+      if(act&&act.usa_modulo&&modsA.length>0){
         h+='<div class="fg" style="margin-top:5px"><label>M\u00f3dulos <button class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllModC(\''+cod+'_'+i+'\')">Todos</button></label><div class="modbox" id="mc_'+cod+'_'+i+'">';
         modsA.forEach(function(m){var chk=selMA.indexOf(m.id)>=0;h+='<div class="cbi"><input type="checkbox" value="'+m.id+'" '+(chk?'checked':'')+'><label>'+m.nombre+'</label></div>'});
         h+='</div></div>';
-      }else{h+=' <span style="color:#c53030;font-size:10px">\u26a0 Sin m\u00f3dulo</span>'}
+      }else if(act&&act.usa_modulo&&modsA.length===0){h+=' <span style="color:#c53030;font-size:10px">\u26a0 Sin m\u00f3dulo configurado</span>'}
       if(tieneR)h+=' <span class="badge b-ex">'+act.indicador+'</span>';
       h+='<div class="fr" style="margin-top:5px"><div class="fg"><label>Horas</label><input type="number" id="ah_'+cod+'_'+i+'" value="'+(a.h||0)+'" min="0" max="16" step="0.5" onchange="updActH(\''+cod+'\','+i+',this.value)"></div>';
       if(tieneR)h+='<div class="fg"><label>Rend. '+(act.desc_rend||act.indicador)+'</label><input type="number" id="rend_'+cod+'_'+i+'" value="'+(a.rend||'')+'" min="0" step="1" placeholder="Cantidad"></div>';
@@ -1038,11 +1059,11 @@ function consolidar(cod){
   var sinMod=false,sinRend=false;
   acts2.forEach(function(a,i){
     var re=document.getElementById('rend_'+cod+'_'+i);if(re)a.rend=parseFloat(re.value)||0;
-    if(!a.mods||a.mods.length===0)sinMod=true;
     var act=ACT.find(function(x){return x.id===a.act});
+    if(act&&act.usa_modulo&&(!a.mods||a.mods.length===0))sinMod=true;
     if(act&&act.indicador&&(!a.rend||a.rend<=0))sinRend=true;
   });
-  if(sinMod){alert('Hay actividades sin m\u00f3dulo. Asigna m\u00f3dulos antes de confirmar.');return}
+  if(sinMod){alert('Hay actividades con m\u00f3dulo requerido sin asignar. Verifica los m\u00f3dulos antes de confirmar.');return}
   if(sinRend&&!confirm('Hay actividades con rendimiento obligatorio sin reportar. \u00bfContinuar de todas formas?'))return;
   var hNorm=diaSem===0?0:Math.min(hrs,maxN);var hExt=diaSem===0?hrs:Math.max(0,hrs-maxN);var excedeH=hu&&hrs>hu.h;
   acts2.forEach(function(a){var act=ACT.find(function(x){return x.id===a.act});
@@ -1189,7 +1210,7 @@ function expCargosCSV(){
 }
 
 // === IMPORTAR CON SINCRONIZACION INTELIGENTE ===
-function impInteligente(tipo){
+function impInteligente(tipo){if(!soloAdmin())return;
   var inp=document.createElement('input');inp.type='file';inp.accept='.csv';
   inp.onchange=function(ev){
     var f=ev.target.files[0];if(!f)return;
@@ -1266,7 +1287,7 @@ function procesarImpInteligente(tipo,txt){
 }
 
 // === GESTION DE CARGOS COMPLETA ===
-function modalNuevoCargo(){
+function modalNuevoCargo(){if(!soloAdmin())return;
   var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Nuevo Cargo</h2>';
   mh+='<div class="fg"><label>ID (ej: SUP_NUEVO)</label><input id="ncId"></div>';
   mh+='<div class="fg"><label>Nombre</label><input id="ncNombre"></div>';
@@ -1283,7 +1304,7 @@ function doCrearCargo(){
   CARGOS.push({id:id,nombre:nom,personas:pers});
   guardarLS();cerrarModal();renderGCargos();alert('Cargo creado');
 }
-function eliminarCargo(id){
+function eliminarCargo(id){if(!soloAdmin())return;
   var acts=ACT.filter(function(a){return a.aprobador===id});
   if(acts.length>0){alert('No se puede eliminar: tiene '+acts.length+' actividades asignadas. Reasigna primero.');return}
   if(!confirm('Eliminar cargo '+id+'?'))return;
@@ -1295,33 +1316,42 @@ function limpiar(){if(!confirm('Borrar registros?'))return;limpiando=true;asg=[]
 function limpiarTodo(){if(!confirm('BORRAR TODO?'))return;limpiando=true;var keys=[];for(var i=0;i<localStorage.length;i++)keys.push(localStorage.key(i));keys.forEach(function(k){localStorage.removeItem(k)});sessionStorage.clear();window.location.replace(window.location.pathname+'?r='+Date.now())}
 
 // === TAB 5: GESTION ===
-function renderGestion(){renderGTrb();renderGAct();renderGMod();renderGUsr();renderGCargos()}
-function renderGTrb(){var html='';TRB.forEach(function(t){html+='<tr style="'+(t.activo?'':'opacity:.5')+'"><td>'+t.codigo+'</td><td>'+t.nombre+'</td><td>'+t.area+'</td><td>'+(t.actividad_base?'<span class="badge b-ok" style="font-size:9px">Base</span> ':'')+'<button class="btn btn-i btn-sm" onclick="modalTrb(\''+t.codigo+'\')">Ed</button> <button class="btn btn-sm" style="background:#dbeafe;font-size:10px" onclick="modalConfigBase(\''+t.codigo+'\')">Base</button> <button class="btn btn-d btn-sm" onclick="togTrb(\''+t.codigo+'\')">'+(t.activo?'Des':'Act')+'</button></td></tr>'});document.getElementById('g1').innerHTML=html}
+function renderGestion(){
+  var t5=document.getElementById('t5');
+  if(t5){if(esAdmin())t5.classList.remove('no-admin-gestion');else t5.classList.add('no-admin-gestion');}
+  renderGTrb();renderGAct();renderGMod();renderGUsr();renderGCargos()
+}
+function renderGTrb(){var html='';var adm=esAdmin();TRB.forEach(function(t){html+='<tr style="'+(t.activo?'':'opacity:.5')+'"><td>'+t.codigo+'</td><td>'+t.nombre+'</td><td>'+t.area+'</td><td>'+(adm?(t.actividad_base?'<span class="badge b-ok" style="font-size:9px">Base</span> ':'')+' <button class="btn btn-i btn-sm" onclick="modalTrb(\''+t.codigo+'\')">Ed</button> <button class="btn btn-sm" style="background:#dbeafe;font-size:10px" onclick="modalConfigBase(\''+t.codigo+'\')">Base</button> <button class="btn btn-d btn-sm" onclick="togTrb(\''+t.codigo+'\')">'+(t.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(t.activo?'#c6f6d5':'#e2e8f0')+';color:'+(t.activo?'#276749':'#718096')+';font-size:9px">'+(t.activo?'Activo':'Inactivo')+'</span>')+'</td></tr>'});document.getElementById('g1').innerHTML=html}
 function renderGAct(){var uni=document.getElementById('gFltU').value;var cat=document.getElementById('gFltC').value;var list=ACT.filter(function(a){return(!uni||a.unidad===uni)&&(!cat||a.categoria===cat)});
-  var html='';list.slice(0,60).forEach(function(a){
+  var html='';var adm=esAdmin();list.slice(0,60).forEach(function(a){
     html+='<tr style="'+(a.activo?'':'opacity:.5')+'"><td style="font-size:10px">'+a.categoria+'</td><td style="font-size:10px">'+a.subcategoria+'</td><td style="font-size:10px">'+(a.indicador||'-')+'</td><td>';
-    html+='<select style="font-size:10px;padding:2px;border:1px solid #e2e8f0;border-radius:4px;width:100%" onchange="cambiarAprobador(\''+a.id+'\',this.value)">';
-    html+='<option value="ADMIN" '+(a.aprobador==='ADMIN'?'selected':'')+'>Admin</option>';
-    CARGOS.forEach(function(c2){html+='<option value="'+c2.id+'" '+(a.aprobador===c2.id?'selected':'')+'>'+c2.nombre+'</option>'});
-    html+='</select></td><td><button class="btn btn-d btn-sm" onclick="togAct(\''+a.id+'\')">'+( a.activo?'Des':'Act')+'</button></td></tr>'});
+    if(adm){html+='<select style="font-size:10px;padding:2px;border:1px solid #e2e8f0;border-radius:4px;width:100%" onchange="cambiarAprobador(\''+a.id+'\',this.value)">';html+='<option value="ADMIN" '+(a.aprobador==='ADMIN'?'selected':'')+'>Admin</option>';CARGOS.forEach(function(c2){html+='<option value="'+c2.id+'" '+(a.aprobador===c2.id?'selected':'')+'>'+c2.nombre+'</option>'});html+='</select>';}
+    else{var cargoN=CARGOS.find(function(c2){return c2.id===a.aprobador});html+='<span style="font-size:10px">'+(cargoN?cargoN.nombre:a.aprobador||'-')+'</span>';}
+    html+='</td><td>'+(adm?'<button class="btn btn-d btn-sm" onclick="togAct(\''+a.id+'\')">'+( a.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(a.activo?'#c6f6d5':'#e2e8f0')+';font-size:9px">'+(a.activo?'Act':'Des')+'</span>')+'</td></tr>'});
   document.getElementById('g2').innerHTML=html;
   var fltC=document.getElementById('gFltC');if(fltC.options.length<=1){var cats=[];ACT.forEach(function(a){if(a.activo&&(!uni||a.unidad===uni)&&cats.indexOf(a.categoria)<0)cats.push(a.categoria)});cats.sort();cats.forEach(function(c2){var o=document.createElement('option');o.value=c2;o.textContent=c2;fltC.appendChild(o)})}
 }
-function renderGMod(){var html='';MOD.forEach(function(m){html+='<tr style="'+(m.activo?'':'opacity:.5')+'"><td>'+m.id+'</td><td>'+m.nombre+'</td><td>'+m.unidad+'</td><td><button class="btn btn-i btn-sm" onclick="modalMod(\''+m.id+'\')">Ed</button> <button class="btn btn-d btn-sm" onclick="togMod(\''+m.id+'\')">'+(m.activo?'Des':'Act')+'</button></td></tr>'});document.getElementById('g3').innerHTML=html}
-function renderGUsr(){var html='';if(!usr.length)html='<tr><td colspan="4" style="color:#a0aec0;text-align:center">Sin usuarios</td></tr>';
-  usr.forEach(function(u){html+='<tr><td>'+u.usr+'</td><td>'+u.rol+'</td><td>'+(u.codigo||'')+'</td><td><button class="btn btn-d btn-sm" onclick="delUsr(\''+u.usr+'\')">Eliminar</button></td></tr>'});document.getElementById('g4').innerHTML=html}
-function renderGCargos(){var html='';CARGOS.forEach(function(c){
+function renderGMod(){var html='';var adm=esAdmin();MOD.forEach(function(m){html+='<tr style="'+(m.activo?'':'opacity:.5')+'"><td>'+m.id+'</td><td>'+m.nombre+'</td><td>'+m.unidad+'</td><td>'+(adm?'<button class="btn btn-i btn-sm" onclick="modalMod(\''+m.id+'\')">Ed</button> <button class="btn btn-d btn-sm" onclick="togMod(\''+m.id+'\')">'+(m.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(m.activo?'#c6f6d5':'#e2e8f0')+';font-size:9px">'+(m.activo?'Activo':'Inactivo')+'</span>')+'</td></tr>'});document.getElementById('g3').innerHTML=html}
+function renderGUsr(){var html='';var adm=esAdmin();if(!usr.length)html='<tr><td colspan="4" style="color:#a0aec0;text-align:center">Sin usuarios</td></tr>';
+  usr.forEach(function(u){html+='<tr><td>'+u.usr+'</td><td>'+u.rol+'</td><td>'+(u.codigo||'')+'</td><td>'+(adm?'<button class="btn btn-d btn-sm" onclick="delUsr(\''+u.usr+'\')">Eliminar</button>':'<span class="badge" style="background:#e2e8f0;color:#718096;font-size:9px">Solo lectura</span>')+'</td></tr>'});document.getElementById('g4').innerHTML=html}
+function renderGCargos(){var html='';var adm=esAdmin();CARGOS.forEach(function(c){
   var nombres=c.personas.map(function(p){var t=TRB.find(function(x){return x.codigo===p});return t?t.nombre:p}).join(', ');
   var numActs=ACT.filter(function(a){return a.aprobador===c.id}).length;
-  html+='<tr><td>'+c.id+'</td><td>'+c.nombre+'</td><td style="font-size:10px">'+nombres+'</td><td>'+numActs+'</td><td><button class="btn btn-i btn-sm" onclick="modalCargo(\''+c.id+'\')">Ed</button> <button class="btn btn-d btn-sm" onclick="eliminarCargo(\''+c.id+'\')">X</button></td></tr>'});
+  html+='<tr><td>'+c.id+'</td><td>'+c.nombre+'</td><td style="font-size:10px">'+nombres+'</td><td>'+numActs+'</td><td>';
+  html+=adm
+    ?'<button class="btn btn-i btn-sm" onclick="modalCargo(\''+c.id+'\')">Ed</button> <button class="btn btn-d btn-sm" onclick="eliminarCargo(\''+c.id+'\')">X</button>'
+    :'<span class="badge" style="background:#e2e8f0;color:#718096;font-size:9px">Solo lectura</span>';
+  html+='</td></tr>'});
   document.getElementById('g5').innerHTML=html}
-function togTrb(cod){var t=TRB.find(function(x){return x.codigo===cod});if(t){t.activo=!t.activo;guardarLS();renderGTrb()}}
-function cambiarAprobador(id,cargo){var a=ACT.find(function(x){return x.id===id});if(a){a.aprobador=cargo;guardarLS()}}
-function togAct(id){var a=ACT.find(function(x){return x.id===id});if(a){a.activo=!a.activo;guardarLS();renderGAct()}}
-function togMod(id){var m=MOD.find(function(x){return x.id===id});if(m){m.activo=!m.activo;guardarLS();renderGMod()}}
-function delUsr(u){if(confirm('Eliminar?')){usr=usr.filter(function(x){return x.usr!==u});guardarLS();renderGUsr()}}
+function esAdmin(){return usuarioLogueado==='Admin';}
+function soloAdmin(){if(!esAdmin()){alert('Solo el Administrador puede realizar cambios en Gestión.');return false;}return true;}
+function togTrb(cod){if(!soloAdmin())return;var t=TRB.find(function(x){return x.codigo===cod});if(t){t.activo=!t.activo;guardarLS();renderGTrb()}}
+function cambiarAprobador(id,cargo){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.aprobador=cargo;guardarLS()}}
+function togAct(id){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.activo=!a.activo;guardarLS();renderGAct()}}
+function togMod(id){if(!soloAdmin())return;var m=MOD.find(function(x){return x.id===id});if(m){m.activo=!m.activo;guardarLS();renderGMod()}}
+function delUsr(u){if(!soloAdmin())return;if(confirm('Eliminar?')){usr=usr.filter(function(x){return x.usr!==u});guardarLS();renderGUsr()}}
 // MODALES
-function modalConfigBase(cod){
+function modalConfigBase(cod){if(!soloAdmin())return;
   var t=TRB.find(function(x){return x.codigo===cod});if(!t)return;
   var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Config. Base: '+t.nombre+'</h2>';
   mh+='<input type="hidden" id="mcbCod" value="'+cod+'">';
@@ -1375,7 +1405,7 @@ function doSaveConfigBase(){
   guardarLS();cerrarModal();renderGTrb();
   alert(t.nombre+': '+(actId?'configurado':'sin precarga'));
 }
-function modalTrb(cod){var isNew=!cod;var t=isNew?{codigo:'',nombre:'',area:'',supervisor:''}:TRB.find(function(x){return x.codigo===cod});if(!isNew&&!t)return;
+function modalTrb(cod){if(!soloAdmin())return;var isNew=!cod;var t=isNew?{codigo:'',nombre:'',area:'',supervisor:''}:TRB.find(function(x){return x.codigo===cod});if(!isNew&&!t)return;
   var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>'+(isNew?'Agregar':'Editar')+' Trabajador</h2><input type="hidden" id="mTMode" value="'+(isNew?'new':cod)+'">';
   mh+='<div class="fg"><label>C\u00f3digo</label><input id="mTC" value="'+(t.codigo||'')+'" '+(isNew?'':'readonly')+'></div>';
   mh+='<div class="fg"><label>Nombre</label><input id="mTN" value="'+(t.nombre||'')+'"></div>';
@@ -1385,7 +1415,7 @@ function modalTrb(cod){var isNew=!cod;var t=isNew?{codigo:'',nombre:'',area:'',s
   document.getElementById('modalContainer').innerHTML=mh}
 function doSaveTrb(){var mode=document.getElementById('mTMode').value;var c=document.getElementById('mTC').value.trim(),n=document.getElementById('mTN').value.trim(),a=document.getElementById('mTA').value.trim(),s=document.getElementById('mTS').value.trim();
   if(!c||!n){alert('C\u00f3digo y nombre requeridos');return}if(mode==='new'){if(TRB.find(function(x){return x.codigo===c})){alert('Ya existe');return}TRB.push({codigo:c,nombre:n,area:a,supervisor:s,actividad_base:'',activo:true})}else{var t=TRB.find(function(x){return x.codigo===mode});if(t){t.nombre=n;t.area=a;t.supervisor=s}}guardarLS();cerrarModal();renderGTrb();alert('OK')}
-function modalMod(id){var isNew=!id;var m=isNew?{id:'',nombre:'',unidad:''}:MOD.find(function(x){return x.id===id});if(!isNew&&!m)return;
+function modalMod(id){if(!soloAdmin())return;var isNew=!id;var m=isNew?{id:'',nombre:'',unidad:''}:MOD.find(function(x){return x.id===id});if(!isNew&&!m)return;
   var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>'+(isNew?'Agregar':'Editar')+' M\u00f3dulo</h2><input type="hidden" id="mMMode" value="'+(isNew?'new':id)+'">';
   mh+='<div class="fg"><label>ID</label><input id="mMI" value="'+(m.id||'')+'" '+(isNew?'':'readonly')+'></div>';
   mh+='<div class="fg"><label>Nombre</label><input id="mMN" value="'+(m.nombre||'')+'"></div>';
@@ -1394,7 +1424,7 @@ function modalMod(id){var isNew=!id;var m=isNew?{id:'',nombre:'',unidad:''}:MOD.
   document.getElementById('modalContainer').innerHTML=mh}
 function doSaveMod(){var mode=document.getElementById('mMMode').value;var mi=document.getElementById('mMI').value.trim(),mn=document.getElementById('mMN').value.trim(),mu=document.getElementById('mMU').value;
   if(!mi||!mn){alert('ID y nombre requeridos');return}if(mode==='new'){if(MOD.find(function(x){return x.id===mi})){alert('Ya existe');return}MOD.push({id:mi,nombre:mn,unidad:mu,activo:true})}else{var m=MOD.find(function(x){return x.id===mode});if(m){m.nombre=mn;m.unidad=mu}}guardarLS();cerrarModal();renderGMod();alert('OK')}
-function modalAct(){var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Agregar Actividad</h2>';
+function modalAct(){if(!soloAdmin())return;var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Agregar Actividad</h2>';
   mh+='<div class="fg"><label>Unidad</label><select id="mAU">';UNI.forEach(function(u){mh+='<option value="'+u.id+'">'+u.id+'</option>'});
   mh+='</select></div><div class="fg"><label>Categor\u00eda</label><input id="mAC"></div><div class="fg"><label>SubCategor\u00eda</label><input id="mAS"></div>';
   mh+='<div class="fg"><label>Indicador</label><input id="mAI"></div><div class="fg"><label>Desc. Rendimiento</label><input id="mAD"></div>';
@@ -1404,7 +1434,7 @@ function modalAct(){var mh='<div class="modal-bg" onclick="if(event.target===thi
 function doSaveAct(){var u=document.getElementById('mAU').value,c=document.getElementById('mAC').value.trim(),s=document.getElementById('mAS').value.trim(),ap=document.getElementById('mAP').value;
   if(!c||!s){alert('Requeridos');return}var maxId=0;ACT.forEach(function(a){var n=parseInt(a.id)||0;if(n>maxId)maxId=n});
   ACT.push({id:String(maxId+1),unidad:u,categoria:c,subcategoria:s,indicador:document.getElementById('mAI').value.trim(),desc_rend:document.getElementById('mAD').value.trim(),usa_modulo:true,orden:maxId+1,activo:true,aprobador:ap});guardarLS();cerrarModal();renderGAct();alert('OK')}
-function modalUsr(){var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Agregar Usuario</h2>';
+function modalUsr(){if(!soloAdmin())return;var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Agregar Usuario</h2>';
   mh+='<div class="fg"><label>Usuario</label><input id="mUU"></div><div class="fg"><label>Clave</label><input type="password" id="mUP"></div>';
   mh+='<div class="fg"><label>Rol</label><select id="mUR"><option>admin</option><option>supervisor</option><option>operario</option></select></div>';
   mh+='<div class="fg"><label>C\u00f3digo trabajador (para supervisores)</label><select id="mUCod"><option value="">Ninguno</option>';
@@ -1413,7 +1443,7 @@ function modalUsr(){var mh='<div class="modal-bg" onclick="if(event.target===thi
   document.getElementById('modalContainer').innerHTML=mh}
 function doSaveUsr(){var u=document.getElementById('mUU').value.trim(),p=document.getElementById('mUP').value,r=document.getElementById('mUR').value,cod=document.getElementById('mUCod').value;
   if(!u){alert('Usuario requerido');return}if(p.length<4){alert('Clave min 4');return}usr.push({usr:u,clave:p,rol:r,codigo:cod});guardarLS();cerrarModal();renderGUsr();alert('OK')}
-function modalCargo(id){var c=CARGOS.find(function(x){return x.id===id});if(!c)return;
+function modalCargo(id){if(!soloAdmin())return;var c=CARGOS.find(function(x){return x.id===id});if(!c)return;
   var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Editar Cargo: '+c.nombre+'</h2>';
   mh+='<div class="fg"><label>Nombre</label><input id="mCN" value="'+c.nombre+'"></div>';
   mh+='<div class="fg"><label>Personas asignadas (c\u00f3digos separados por coma)</label><input id="mCP" value="'+c.personas.join(', ')+'"></div>';
