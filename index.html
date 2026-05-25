@@ -179,7 +179,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button class="btn btn-p" onclick="expCSV()">📥 CSV</button>
 <button class="btn btn-s" onclick="expJSON()">💾 JSON</button>
 <button class="btn btn-i" onclick="impJSON()">📂 Importar JSON</button>
-<button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar Registros</button>
+<button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar Fecha</button>
+<button class="btn btn-d" onclick="limpiarTodosRegistros()" style="background:#c05621">🗑️ Borrar Todos los Registros</button>
 <label id="lblAprobMasiva" style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="chkAprobMasiva" checked onchange="aprobacionMasivaActiva=this.checked;guardarLS()"> Aprob. masiva</label>
 <button class="btn btn-d" onclick="limpiarTodo()" style="background:#991b1b">💣 Reset Total</button>
 </div><input type="file" id="impFile" accept=".json" style="display:none" onchange="doImpJSON(event)"></div></div>
@@ -1385,6 +1386,30 @@ async function limpiar(){
     }
   }else{
     alert('Registros del '+fechaSel+' eliminados.');
+  }
+}
+async function limpiarTodosRegistros(){
+  if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para borrar registros.');return;}
+  if(!confirm('¿Borrar TODOS los registros de TODAS las fechas?\n\nEsto elimina asignaciones, consolidados y huellas de todos los días.\nLa configuración (trabajadores, actividades, módulos, etc.) NO se toca.\n\nEsta acción no se puede deshacer.'))return;
+  asg=[];reg=[];hue={};
+  localStorage.setItem('asg',JSON.stringify(asg));
+  localStorage.setItem('reg',JSON.stringify(reg));
+  localStorage.setItem('hue',JSON.stringify(hue));
+  stats();renderT1();renderT2();renderT3();renderT4();
+  if(SP_READY){
+    SP_GUARDANDO=true;
+    spEstado('☁️ Borrando registros en SP...');
+    try{
+      await spEscribirItem('asg',asg);
+      await spEscribirItem('reg',reg);
+      await spEscribirItem('hue',hue);
+      spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+      alert('Todos los registros eliminados y sincronizados con SharePoint.');
+    }catch(e){
+      alert('Registros borrados localmente, pero error al sincronizar SP:\n'+e.message);
+    }finally{SP_GUARDANDO=false;}
+  }else{
+    alert('Todos los registros eliminados.');
   }
 }
 function limpiarTodo(){if(!confirm('BORRAR TODO?'))return;limpiando=true;var keys=[];for(var i=0;i<localStorage.length;i++)keys.push(localStorage.key(i));keys.forEach(function(k){localStorage.removeItem(k)});sessionStorage.clear();window.location.replace(window.location.pathname+'?r='+Date.now())}
