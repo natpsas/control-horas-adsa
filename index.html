@@ -171,7 +171,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button class="tab-btn active" onclick="swTab('t1',this)">📋 Asignación</button>
 <button class="tab-btn" onclick="swTab('t2',this)">⏰ Consolidación</button>
 <button class="tab-btn" onclick="swTab('t3',this)">✅ Aprobación</button>
-<button class="tab-btn" onclick="swTab('t4',this)">📊 Reportes</button>
+<button id="tabReportes" class="tab-btn" onclick="swTab('t4',this)" style="display:none">📊 Reportes</button>
 <button class="tab-btn" onclick="swTab('t5',this)">⚙️ Gestión</button>
 </div>
 
@@ -179,7 +179,6 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="alert al-i"><b>Asignación Matutina</b> — Plan del día. Agrega actividades con +. Ajustes finales en Consolidación.</div>
 <div class="card"><h2>Asignación de Actividades</h2>
 <div class="fb"><input type="text" id="srcW" placeholder="🔍 Buscar..." oninput="renderT1()"><select id="fltA" onchange="renderT1()"><option value="">Todas las áreas</option></select>
-<button class="btn btn-p btn-sm" onclick="cargarPlantilla()">📋 Cargar plantilla</button>
 <button class="btn btn-s btn-sm" onclick="guardarAsignaciones()">💾 Guardar</button></div>
 <div id="t1List"></div>
 <button class="btn btn-s" onclick="guardarT1()" style="margin-top:12px;width:100%">💾 Guardar Asignaciones</button>
@@ -378,6 +377,9 @@ function mostrarApp(){
   if(usuarioLogueado==='Admin')rolLabel=' [Admin]';
   else{var u2=usr.find(function(x){return x.usr===usuarioLogueado});if(u2&&u2.rol)rolLabel=' ['+u2.rol+']';}
   document.getElementById('usrLogged').textContent='\uD83D\uDC64 '+usuarioLogueado+rolLabel+' | Salir';
+  // Pesta\u00F1a Reportes solo para Admin
+  var tabR=document.getElementById('tabReportes');
+  if(tabR)tabR.style.display=esAdmin()?'':'none';
   // Checkbox aprobaci\u00F3n masiva solo para Admin
   var lblAM=document.getElementById('lblAprobMasiva');
   if(lblAM)lblAM.style.display=tienePermiso('aprobacion_masiva')?'flex':'none';
@@ -744,16 +746,24 @@ async function spCargarRegistros(){
     var r=await fetch(url,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
     if(!r.ok){console.warn('ControlHoras_Registros: lista no encontrada ('+r.status+')');return;}
     var d=await r.json();
-    if(d.value&&d.value.length){
-      var spRegs=d.value.map(spColsToReg);
-      // Mantener registros locales sin ID (no sincronizados aún)
-      var sinId=reg.filter(function(x){return !x.id});
-      // Merge: SP gana para registros con ID; agregar locales sin ID
-      var spIds={};spRegs.forEach(function(x){spIds[x.id]=1;});
-      reg=spRegs.concat(sinId);
-      localStorage.setItem('reg',JSON.stringify(reg));
-      console.log('SP Registros cargados: '+spRegs.length);
-    }
+    // Construir índices de SP para deduplicación
+    var spRegs=(d.value||[]).map(spColsToReg);
+    var spById={};       // id (Title) → registro SP
+    var spByNatKey={};   // "fecha|worker|actId" → 1  (clave natural para registros sin ID)
+    spRegs.forEach(function(x){
+      if(x.id)spById[x.id]=1;
+      spByNatKey[(x.f||'')+'|'+(x.w||'')+'|'+(x.act||'')]=1;
+    });
+    // Registros locales a conservar:
+    // · Tienen ID y SP NO los tiene aún (escritura pendiente/fallida)
+    // · No tienen ID Y no existen en SP por clave natural (realmente nuevos, no migrados)
+    var localToKeep=reg.filter(function(x){
+      if(x.id)return !spById[x.id];
+      return !spByNatKey[(x.f||'')+'|'+(x.w||'')+'|'+(x.act||'')];
+    });
+    reg=spRegs.concat(localToKeep);
+    localStorage.setItem('reg',JSON.stringify(reg));
+    console.log('SP Registros cargados: '+spRegs.length+(localToKeep.length?' + '+localToKeep.length+' locales pendientes':''));
   }catch(e){console.warn('spCargarRegistros:',e.message);}
 }
 async function diagnosticarSPReg(){
@@ -812,7 +822,7 @@ async function migrarRegistrosSP(){
 async function spCargar(){
   var mapa={
     'asg':function(v){asg=v;localStorage.setItem('asg',JSON.stringify(v))},
-    'reg':function(v){reg=v;localStorage.setItem('reg',JSON.stringify(v))},
+    // 'reg' ya no se carga desde blob — ControlHoras_Registros es la fuente de verdad (spCargarRegistros)
     'hue':function(v){hue=v;localStorage.setItem('hue',JSON.stringify(v))},
     'usr':function(v){usr=v;localStorage.setItem('usr',JSON.stringify(v))},
     'TRB':function(v){TRB=v;localStorage.setItem('TRB_custom',JSON.stringify(v))},
@@ -847,15 +857,8 @@ async function spGuardar(){
       var asgMerged=spAsg.filter(function(a){return a.f!==fechaSel}).concat(localAsg);
       await spEscribirItem('asg',asgMerged);
     }
-    // reg — mismo criterio
-    var itReg=await spLeerItem('reg');
-    var spReg=(itReg&&itReg.Valor)?JSON.parse(itReg.Valor):[];
-    var localReg=reg.filter(function(r){return r.f===fechaSel});
-    var spRegFecha=spReg.filter(function(r){return r.f===fechaSel});
-    if(localReg.length>0||spRegFecha.length===0){
-      var regMerged=spReg.filter(function(r){return r.f!==fechaSel}).concat(localReg);
-      await spEscribirItem('reg',regMerged);
-    }
+    // reg — ya no se escribe al blob; ControlHoras_Registros es la fuente de verdad.
+    // Los registros se sincronizan fila-por-fila vía spEscribirReg() al consolidar/aprobar.
     // hue — solo escribe la fecha actual si hay datos locales para ese día
     var itHue=await spLeerItem('hue');
     var spHue=(itHue&&itHue.Valor)?JSON.parse(itHue.Valor):{};
@@ -1717,6 +1720,7 @@ function renderT3(){
       }else{html+='<span style="font-size:10px;color:#a0aec0">Sin permiso</span>';}
     }else if(esAdmin()){
       html+='<button class="btn btn-sm" style="background:#edf2f7;font-size:10px" onclick="revertirAprobacion('+ri+')">Revertir</button>';
+      if(r.st==='rechazado')html+=' <button class="btn btn-d btn-sm" style="font-size:10px" onclick="eliminarRechazado('+ri+')">🗑️ Eliminar</button>';
     }
     html+='</td></tr>';
     if(r.st==='pendiente'){
@@ -1767,6 +1771,15 @@ function aprobar(ri){
   if(SP_READY)spEscribirReg(reg[ri]).catch(function(){});
 }
 function rechazar(ri){var m=prompt('Motivo:');if(!m)return;reg[ri].st='rechazado';reg[ri].mr=m;reg[ri].fa=new Date().toISOString();reg[ri].aprobado_por=usuarioLogueado;guardarLS();toast('✅ Registro rechazado','warn');renderT3();if(SP_READY)spEscribirReg(reg[ri]).catch(function(){});}
+function eliminarRechazado(ri){
+  if(!reg[ri]||reg[ri].st!=='rechazado')return;
+  var r=reg[ri];
+  if(!confirm('¿Eliminar el registro rechazado de '+r.n+' ('+r.f+')?  Esta acción no se puede deshacer.'))return;
+  reg.splice(ri,1);
+  guardarLS();stats();renderT3();renderT1();
+  if(SP_READY)spEliminarReg(r).catch(function(){});
+  toast('🗑️ Registro eliminado');
+}
 function aprobarMasivo(){
   if(!tienePermiso('aprobacion_masiva')){alert('No tienes permiso para usar la aprobación masiva.');return;}
   // Leer filtros activos en T3
