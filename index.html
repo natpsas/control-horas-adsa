@@ -273,7 +273,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div id="paEstadoPanel" style="font-size:12px;margin-bottom:10px"></div>
 <button class="btn btn-i" onclick="modalConexionPA()">⚙️ Configurar URLs de Power Automate</button>
 <button class="btn btn-s" onclick="spSincronizarManual()" style="margin-left:6px">🔄 Sincronizar ahora</button>
-<button class="btn btn-sm" onclick="migrarRegistrosSP()" style="margin-left:6px;background:#744210;color:#fff;border:none" title="Sube registros existentes sin ID a la lista ControlHoras_Registros">📤 Migrar registros históricos a SP</button>
+<button class="btn btn-sm" onclick="migrarRegistrosSP()" style="margin-left:6px;background:#744210;color:#fff;border:none" title="Sube registros existentes sin ID a la lista ControlHoras_Registros">📤 Migrar registros a SP</button>
+<button class="btn btn-sm" onclick="diagnosticarSPReg()" style="margin-left:6px;background:#2b4c8c;color:#fff;border:none" title="Verifica que la lista ControlHoras_Registros esté bien configurada">🔍 Diagnosticar lista</button>
 </div>
 <div class="grid-2">
 <div class="card"><h2>👥 Trabajadores</h2>
@@ -667,7 +668,7 @@ function regToSPCols(r){
     Title:r.id,
     Fecha:r.f,Codigo:r.w,Trabajador:r.n,Area:r.ar,
     Unidad:r.uni||'',Categoria:r.cat||'',SubCategoria:r.sub||'',ActividadId:r.act||'',
-    Tipo:r.tp||'NORMAL',
+    TipoHora:r.tp||'NORMAL',
     HAsig:r.h||0,HReg:parseFloat((r.hr||0).toFixed(2)),
     Rendimiento:r.rend||0,Indicador:indLabel(r.ind||''),
     HHuellero:r.hhu||0,Entrada:r.ehu||'',Salida:r.shu||'',
@@ -683,7 +684,7 @@ function spColsToReg(it){
     id:it.Title,_spId:it.Id,
     f:it.Fecha||'',w:it.Codigo||'',n:it.Trabajador||'',ar:it.Area||'',
     uni:it.Unidad||'',cat:it.Categoria||'',sub:it.SubCategoria||'',act:it.ActividadId||'',
-    tp:it.Tipo||'NORMAL',
+    tp:it.TipoHora||'NORMAL',
     h:parseFloat(it.HAsig)||0,hr:parseFloat(it.HReg)||0,
     rend:it.Rendimiento||null,ind:it.Indicador||'',
     hhu:it.HHuellero||null,ehu:it.Entrada||null,shu:it.Salida||null,
@@ -754,6 +755,46 @@ async function spCargarRegistros(){
       console.log('SP Registros cargados: '+spRegs.length);
     }
   }catch(e){console.warn('spCargarRegistros:',e.message);}
+}
+async function diagnosticarSPReg(){
+  var log=[];
+  function L(msg){log.push(msg);console.log(msg);}
+  try{
+    if(!SP_READY){alert('SP no conectado');return;}
+    L('1. SP_READY=true, obteniendo token...');
+    var token=await _getToken();L('2. Token OK');
+    // Verificar que la lista existe
+    var r1=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')?$select=Title,ItemCount",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    L('3. GET lista → status '+r1.status);
+    if(!r1.ok){var t1=await r1.text();L('   ERROR: '+t1.substring(0,200));alert('Error al leer la lista:\n'+log.join('\n'));return;}
+    var d1=await r1.json();L('   Lista OK: '+d1.Title+', items: '+d1.ItemCount);
+    // Verificar columnas
+    var r2=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields?$filter=Hidden eq false and ReadOnlyField eq false&$select=Title,InternalName,TypeDisplayName",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    var d2=await r2.json();
+    var cols=(d2.value||[]).map(function(c){return c.InternalName+'('+c.TypeDisplayName+')'});
+    L('4. Columnas encontradas: '+cols.join(', '));
+    // Intentar escribir un item de prueba
+    var digest=await _spGetDigest();L('5. Digest OK');
+    var testItem={Title:'TEST_'+Date.now(),Fecha:fechaSel||'2026-01-01',Codigo:'TEST',Trabajador:'TEST',Area:'TEST',
+      Unidad:'TEST',Categoria:'TEST',SubCategoria:'TEST',ActividadId:'TEST',TipoHora:'NORMAL',
+      HAsig:0,HReg:0,Rendimiento:0,Indicador:'',HHuellero:0,Entrada:'',Salida:'',
+      Modulos:'',Referencia:'',Observaciones:'',Estado:'pendiente',
+      FechaConsolid:'',FechaAprob:'',MotivoRechazo:'',AprobadoPor:''};
+    var r3=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items",
+      {method:'POST',headers:{'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token},
+      body:JSON.stringify(testItem)});
+    L('6. POST item prueba → status '+r3.status);
+    if(!r3.ok){var t3=await r3.text();L('   ERROR: '+t3.substring(0,300));alert('Error al escribir:\n'+log.join('\n'));return;}
+    var d3=await r3.json();L('   Item creado con Id: '+d3.Id);
+    // Eliminar el item de prueba
+    var digest2=await _spGetDigest();
+    await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items("+d3.Id+")",
+      {method:'POST',headers:{'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest2,'Authorization':'Bearer '+token,'IF-MATCH':'*','X-HTTP-Method':'DELETE'},body:'{}'});
+    L('7. Item de prueba eliminado ✅');
+    alert('✅ LISTA OK\n\n'+log.join('\n'));
+  }catch(e){L('EXCEPCIÓN: '+e.message);alert('Error:\n'+log.join('\n'));}
 }
 async function migrarRegistrosSP(){
   if(!SP_READY){alert('SP no conectado');return;}
