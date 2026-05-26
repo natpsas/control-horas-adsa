@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="es">
 <head>
 <meta charset="UTF-8">
@@ -285,7 +285,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="card"><h2>📋 Actividades</h2>
 <div class="fb"><select id="gFltU" onchange="renderGAct()"><option value="">Todas unidades</option></select><select id="gFltC" onchange="renderGAct()"><option value="">Todas categorías</option></select></div>
 <table><thead><tr><th>Categoría</th><th>SubCategoría</th><th>Ind.</th><th>Módulo</th><th>Aprobador</th><th>Acciones</th></tr></thead><tbody id="g2"></tbody></table>
-<div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalAct()">+ Agregar</button><button class="btn btn-s btn-sm" onclick="expActCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('act')">Importar CSV</button></div>
+<div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalAct()">+ Agregar</button><button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:none;font-weight:600;padding:4px 8px;border-radius:7px;cursor:pointer;font-size:11px" onclick="modalRenombrarCat()">✏️ Renombrar cat.</button><button class="btn btn-s btn-sm" onclick="expActCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('act')">Importar CSV</button></div>
 <input type="file" id="csvAct" accept=".csv,.xls,.xlsx" style="display:none" onchange="doImpAct(event)"></div>
 
 <div class="card"><h2>📦 Módulos</h2>
@@ -422,7 +422,10 @@ function init(){
       var a=document.querySelector('.tc.active');
       if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
       spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
-    }).catch(function(e){console.warn('Auto-sync SP:',e.message)});
+    }).catch(function(e){
+      console.warn('Auto-sync SP:',e.message);
+      spEstado('⚠️ Error SP: '+e.message.substring(0,40));
+    });
   },60000);
   // Sincronizar al volver a la pestaña (ej: después de una llamada)
   // IMPORTANTE: primero guarda local→SP, luego carga SP→local para no perder datos
@@ -626,7 +629,7 @@ async function spLoginYConectar(){
 }
 
 async function _spGetDigest(){
-  var now=Date.now();if(SP_DIGEST&&(now-SP_DIGEST_TS)<1500000)return SP_DIGEST;
+  var now=Date.now();if(SP_DIGEST&&(now-SP_DIGEST_TS)<1200000)return SP_DIGEST;// 20 min (SP expira a los 30)
   var token=await _getToken();
   var r=await fetch(SP_URL+'/_api/contextinfo',{method:'POST',headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
   if(!r.ok)throw new Error('Digest error ('+r.status+')');
@@ -699,6 +702,141 @@ function spColsToReg(it){
     excede:false
   };
 }
+// =====================================================
+// === SP LISTAS: TRABAJADORES Y ACTIVIDADES ===
+// =====================================================
+var SP_LIST_TRB='ControlHoras_Trabajadores';
+var SP_LIST_ACT='ControlHoras_Actividades';
+
+function trbToSPCols(t){
+  return {Title:t.codigo,Nombre:t.nombre,Area:t.area||'',
+    Supervisor:t.supervisor||'',ActividadBase:t.actividad_base||'',Activo:t.activo!==false};
+}
+function spColsToTrb(it){
+  return {codigo:it.Title,_spId:it.Id,nombre:it.Nombre||'',area:it.Area||'',
+    supervisor:it.Supervisor||'',actividad_base:it.ActividadBase||'',activo:it.Activo!==false};
+}
+function actToSPCols(a){
+  return {Title:String(a.id),Unidad:a.unidad||'',Categoria:a.categoria||'',SubCategoria:a.subcategoria||'',
+    Indicador:a.indicador||'',DescRend:a.desc_rend||'',UsaModulo:a.usa_modulo||false,
+    Orden:a.orden||0,Activo:a.activo!==false,Aprobador:a.aprobador||''};
+}
+function spColsToAct(it){
+  return {id:it.Title,_spId:it.Id,unidad:it.Unidad||'',categoria:it.Categoria||'',
+    subcategoria:it.SubCategoria||'',indicador:it.Indicador||'',desc_rend:it.DescRend||'',
+    usa_modulo:it.UsaModulo||false,orden:it.Orden||0,activo:it.Activo!==false,aprobador:it.Aprobador||''};
+}
+
+async function spCargarTRB(){
+  if(!SP_READY)return;
+  try{
+    var token=await _getToken();
+    var sel='Id,Title,Nombre,Area,Supervisor,ActividadBase,Activo';
+    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_TRB+"')/items?$select="+sel+"&$top=500&$orderby=Area asc",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(!r.ok){console.warn('ControlHoras_Trabajadores: '+r.status+' (lista no creada aún, usando datos locales)');return;}
+    var d=await r.json();
+    if(!d.value||!d.value.length){console.warn('ControlHoras_Trabajadores: lista vacía, usando datos locales');return;}
+    TRB=(d.value||[]).map(spColsToTrb);
+    localStorage.setItem('TRB_custom',JSON.stringify(TRB));
+    console.log('TRB desde SP: '+TRB.length+' trabajadores');
+  }catch(e){console.warn('spCargarTRB:',e.message);}
+}
+
+async function spCargarACT(){
+  if(!SP_READY)return;
+  try{
+    var token=await _getToken();
+    var sel='Id,Title,Unidad,Categoria,SubCategoria,Indicador,DescRend,UsaModulo,Orden,Activo,Aprobador';
+    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ACT+"')/items?$select="+sel+"&$top=500&$orderby=Orden asc",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(!r.ok){console.warn('ControlHoras_Actividades: '+r.status+' (lista no creada aún, usando datos locales)');return;}
+    var d=await r.json();
+    if(!d.value||!d.value.length){console.warn('ControlHoras_Actividades: lista vacía, usando datos locales');return;}
+    ACT=(d.value||[]).map(spColsToAct);
+    localStorage.setItem('ACT_custom',JSON.stringify(ACT));
+    console.log('ACT desde SP: '+ACT.length+' actividades');
+  }catch(e){console.warn('spCargarACT:',e.message);}
+}
+
+async function spGuardarTrabajador(t){
+  if(!SP_READY||!t)return;
+  var token=await _getToken();var digest=await _spGetDigest();
+  var body=JSON.stringify(trbToSPCols(t));
+  var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_TRB+"')/items";
+  var hdrBase={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token};
+  if(t._spId){
+    var h=Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'});
+    var rm=await fetch(listUrl+'('+t._spId+')',{method:'POST',headers:h,body:body});
+    if(!rm.ok&&rm.status!==204)throw new Error('MERGE TRB fallo ('+rm.status+')');
+  }else{
+    var enc=encodeURIComponent("Title eq '"+t.codigo+"'");
+    var fr=await fetch(listUrl+'?$filter='+enc+'&$select=Id&$top=1',{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    var fd=await fr.json();
+    if(fd.value&&fd.value.length){
+      t._spId=fd.value[0].Id;
+      var h2=Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'});
+      var rm2=await fetch(listUrl+'('+t._spId+')',{method:'POST',headers:h2,body:body});
+      if(!rm2.ok&&rm2.status!==204)throw new Error('MERGE TRB (2) fallo ('+rm2.status+')');
+    }else{
+      var cr=await fetch(listUrl,{method:'POST',headers:hdrBase,body:body});
+      if(cr.ok){var cd=await cr.json();if(cd.Id)t._spId=cd.Id;}
+      else{var ct=await cr.text();throw new Error('Crear TRB fallo ('+cr.status+'): '+ct.substring(0,80));}
+    }
+  }
+}
+
+async function spGuardarActividad(a){
+  if(!SP_READY||!a)return;
+  var token=await _getToken();var digest=await _spGetDigest();
+  var body=JSON.stringify(actToSPCols(a));
+  var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ACT+"')/items";
+  var hdrBase={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token};
+  if(a._spId){
+    var h=Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'});
+    var rm=await fetch(listUrl+'('+a._spId+')',{method:'POST',headers:h,body:body});
+    if(!rm.ok&&rm.status!==204)throw new Error('MERGE ACT fallo ('+rm.status+')');
+  }else{
+    var enc=encodeURIComponent("Title eq '"+String(a.id)+"'");
+    var fr=await fetch(listUrl+'?$filter='+enc+'&$select=Id&$top=1',{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    var fd=await fr.json();
+    if(fd.value&&fd.value.length){
+      a._spId=fd.value[0].Id;
+      var h2=Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'});
+      var rm2=await fetch(listUrl+'('+a._spId+')',{method:'POST',headers:h2,body:body});
+      if(!rm2.ok&&rm2.status!==204)throw new Error('MERGE ACT (2) fallo ('+rm2.status+')');
+    }else{
+      var cr=await fetch(listUrl,{method:'POST',headers:hdrBase,body:body});
+      if(cr.ok){var cd=await cr.json();if(cd.Id)a._spId=cd.Id;}
+      else{var ct=await cr.text();throw new Error('Crear ACT fallo ('+cr.status+'): '+ct.substring(0,80));}
+    }
+  }
+}
+
+// Sync masivo TRB+ACT → SP (Admin, carga inicial o después de importar CSV)
+var _syncTRBACTActivo=false;
+async function spSyncTRBACT(){
+  if(!SP_READY){toast('SP no conectado','warn');return;}
+  if(_syncTRBACTActivo){toast('⏳ Sync en curso...','warn');return;}
+  _syncTRBACTActivo=true;
+  toast('⏳ Subiendo '+TRB.length+' trabajadores y '+ACT.length+' actividades a SP...','info',20000);
+  var ok=0,err=0;
+  for(var i=0;i<TRB.length;i+=5){
+    await Promise.all(TRB.slice(i,i+5).map(function(t){
+      return spGuardarTrabajador(t).then(function(){ok++;}).catch(function(e){err++;console.warn('syncTRB:',t.codigo,e.message);});
+    }));
+  }
+  for(var j=0;j<ACT.length;j+=5){
+    await Promise.all(ACT.slice(j,j+5).map(function(a){
+      return spGuardarActividad(a).then(function(){ok++;}).catch(function(e){err++;console.warn('syncACT:',a.id,e.message);});
+    }));
+  }
+  localStorage.setItem('TRB_custom',JSON.stringify(TRB));
+  localStorage.setItem('ACT_custom',JSON.stringify(ACT));
+  _syncTRBACTActivo=false;
+  toast('✅ Sync TRB+ACT: '+ok+' ok | '+err+' errores',(err?'warn':'info'),6000);
+}
+
 async function spEscribirReg(r){
   if(!SP_READY||!r)return;
   if(!r.id)r.id=genRegId();
@@ -708,19 +846,23 @@ async function spEscribirReg(r){
   var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items";
   if(r._spId){
     var h2=Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'});
-    await fetch(listUrl+'('+r._spId+')',{method:'POST',headers:h2,body:body});
+    var rm=await fetch(listUrl+'('+r._spId+')',{method:'POST',headers:h2,body:body});
+    if(!rm.ok&&rm.status!==204)throw new Error('MERGE fallo ('+rm.status+') id='+r.id);
   }else{
     // Buscar por Title
     var enc=encodeURIComponent("Title eq '"+r.id+"'");
     var fr=await fetch(listUrl+'?$filter='+enc+'&$select=Id&$top=1',{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(!fr.ok)throw new Error('Busqueda SP fallo ('+fr.status+') id='+r.id);
     var fd=await fr.json();
     if(fd.value&&fd.value.length){
       r._spId=fd.value[0].Id;
       var h3=Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'});
-      await fetch(listUrl+'('+r._spId+')',{method:'POST',headers:h3,body:body});
+      var rm2=await fetch(listUrl+'('+r._spId+')',{method:'POST',headers:h3,body:body});
+      if(!rm2.ok&&rm2.status!==204)throw new Error('MERGE (2) fallo ('+rm2.status+') id='+r.id);
     }else{
       var cr=await fetch(listUrl,{method:'POST',headers:hdrBase,body:body});
       if(cr.ok){var cd=await cr.json();if(cd.Id)r._spId=cd.Id;}
+      else{var ct=await cr.text();throw new Error('Crear SP fallo ('+cr.status+'): '+ct.substring(0,80));}
     }
   }
 }
@@ -736,7 +878,8 @@ async function spEliminarReg(r){
   }
   if(!spId)return;
   var hdr={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token,'IF-MATCH':'*','X-HTTP-Method':'DELETE'};
-  await fetch(listUrl+'('+spId+')',{method:'POST',headers:hdr,body:'{}'});
+  var rd=await fetch(listUrl+'('+spId+')',{method:'POST',headers:hdr,body:'{}'});
+  if(!rd.ok&&rd.status!==204)console.warn('spEliminarReg: DELETE fallo ('+rd.status+') spId='+spId);
 }
 async function spCargarRegistros(){
   if(!SP_READY)return;
@@ -807,10 +950,13 @@ async function diagnosticarSPReg(){
     alert('✅ LISTA OK\n\n'+log.join('\n'));
   }catch(e){L('EXCEPCIÓN: '+e.message);alert('Error:\n'+log.join('\n'));}
 }
+var _subiendoTodoSP=false;
 async function subirTodoSP(){
   if(!SP_READY){alert('SP no conectado');return;}
+  if(_subiendoTodoSP){toast('⏳ Ya hay una subida en curso...','warn');return;}
   if(!reg.length){toast('No hay registros para subir','warn');return;}
   if(!confirm('¿Subir '+reg.length+' registros a ControlHoras_Registros?\n\nEsto creará o actualizará cada registro en SharePoint.'))return;
+  _subiendoTodoSP=true;
   // Asignar ID a los que no tienen
   reg.forEach(function(r){if(!r.id)r.id=genRegId();});
   guardarLS();
@@ -824,6 +970,7 @@ async function subirTodoSP(){
     }));
   }
   guardarLS();// guarda _spId actualizados
+  _subiendoTodoSP=false;
   toast('✅ Subidos: '+ok+' | Errores: '+err,(err>0?'warn':'info'),6000);
 }
 async function migrarRegistrosSP(){
@@ -840,13 +987,14 @@ async function migrarRegistrosSP(){
   }catch(e){toast('⚠️ Error migrando: '+e.message,'warn');}
 }
 async function spCargar(){
+  // ── Carga todos los blobs de ControlHoras_Datos en UNA sola petición ──────
   var mapa={
     'asg':function(v){asg=v;localStorage.setItem('asg',JSON.stringify(v))},
     // 'reg' ya no se carga desde blob — ControlHoras_Registros es la fuente de verdad (spCargarRegistros)
     'hue':function(v){hue=v;localStorage.setItem('hue',JSON.stringify(v))},
     'usr':function(v){usr=v;localStorage.setItem('usr',JSON.stringify(v))},
-    'TRB':function(v){TRB=v;localStorage.setItem('TRB_custom',JSON.stringify(v))},
-    'ACT':function(v){ACT=v;localStorage.setItem('ACT_custom',JSON.stringify(v))},
+    // 'TRB' → ControlHoras_Trabajadores (lista dedicada, ver spCargarTRB)
+    // 'ACT' → ControlHoras_Actividades  (lista dedicada, ver spCargarACT)
     'MOD':function(v){MOD=v;localStorage.setItem('MOD_custom',JSON.stringify(v))},
     'UNI':function(v){UNI=v;localStorage.setItem('UNI_custom',JSON.stringify(v))},
     'CARGOS':function(v){CARGOS=v;localStorage.setItem('CARGOS_custom',JSON.stringify(v))},
@@ -854,8 +1002,28 @@ async function spCargar(){
     'PERMISOS':function(v){for(var k in v)if(PERMISOS[k])PERMISOS[k]=Object.assign({},PERMISOS[k],v[k]);localStorage.setItem('PERMISOS_custom',JSON.stringify(PERMISOS))}
   };
   var ok=0;
-  for(var k in mapa){try{var it=await spLeerItem(k);if(it&&it.Valor){mapa[k](JSON.parse(it.Valor));ok++}}catch(e){console.warn('spCargar "'+k+'":',e.message)}}
-  console.log('SharePoint: '+ok+'/'+Object.keys(mapa).length+' claves cargadas');
+  try{
+    var token=await _getToken();
+    // Una sola petición trae todos los items del blob (vs 9 peticiones en serie antes)
+    var rAll=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$select=Title,Valor&$top=50",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(rAll.ok){
+      var dAll=await rAll.json();
+      (dAll.value||[]).forEach(function(it){
+        if(mapa[it.Title]&&it.Valor){try{mapa[it.Title](JSON.parse(it.Valor));ok++;}catch(e){console.warn('spCargar parse "'+it.Title+'":',e.message);}}
+      });
+      console.log('SharePoint: '+ok+'/'+Object.keys(mapa).length+' claves cargadas (1 petición)');
+    }else{
+      // Fallback: leer clave por clave si falla la petición masiva
+      console.warn('spCargar masivo fallo ('+rAll.status+'), usando fallback individual');
+      for(var k in mapa){try{var it=await spLeerItem(k);if(it&&it.Valor){mapa[k](JSON.parse(it.Valor));ok++}}catch(e){console.warn('spCargar "'+k+'":',e.message)}}
+      console.log('SharePoint: '+ok+'/'+Object.keys(mapa).length+' claves cargadas (fallback)');
+    }
+  }catch(e){
+    console.warn('spCargar:',e.message);
+  }
+  await spCargarTRB();       // carga trabajadores desde ControlHoras_Trabajadores
+  await spCargarACT();       // carga actividades desde ControlHoras_Actividades
   await spCargarRegistros(); // carga lista fila-por-registro
 }
 
@@ -863,8 +1031,9 @@ async function spGuardar(){
   if(!SP_READY||SP_GUARDANDO)return;SP_GUARDANDO=true;
   try{
     // Config centralizada — SOLO ADMIN puede escribirla a SP
+    // TRB y ACT ya no van en blob — tienen listas SP propias (ControlHoras_Trabajadores / Actividades)
     if(usuarioLogueado==='Admin'){
-      var config={'TRB':TRB,'ACT':ACT,'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva,'PERMISOS':PERMISOS};
+      var config={'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva,'PERMISOS':PERMISOS};
       for(var k in config)await spEscribirItem(k,config[k]);
     }
     // asg — merge seguro: solo escribe si hay datos locales para la fecha,
@@ -2254,6 +2423,16 @@ function procesarImpInteligente(tipo,txt){
   if(preview.length>0&&preview.length<=20)msg+='\n\nDetalle:\n'+preview.join('\n');
   if(errores>0)alert(msg);else toast('✅ Importación: '+nuevos+' nuevos, '+actualizados+' actualizados','info',3500);
   renderGestion();
+  // Sincronizar cambios de TRB/ACT con SharePoint
+  if(SP_READY&&(tipo==='trb'||tipo==='act')){
+    var lista=tipo==='trb'?TRB:ACT;
+    var fnSP=tipo==='trb'?spGuardarTrabajador:spGuardarActividad;
+    var okSP=0,errSP=0;
+    (function syncSP(i){
+      if(i>=lista.length){if(errSP>0)toast('⚠️ SP: '+okSP+' ok, '+errSP+' errores','warn');else toast('☁️ SP: '+okSP+' sincronizados','info',2000);return;}
+      Promise.all(lista.slice(i,i+5).map(function(item){return fnSP(item).then(function(){okSP++}).catch(function(){errSP++})})).then(function(){syncSP(i+5)});
+    })(0);
+  }
 }
 
 // === GESTION DE CARGOS COMPLETA ===
@@ -2383,7 +2562,7 @@ function guardarPermisos(){
 }
 function renderGTrb(){var html='';var adm=esAdmin();TRB.forEach(function(t){html+='<tr style="'+(t.activo?'':'opacity:.5')+'"><td>'+t.codigo+'</td><td>'+t.nombre+'</td><td>'+t.area+'</td><td>'+(adm?(t.actividad_base?'<span class="badge b-ok" style="font-size:9px">Base</span> ':'')+' <button class="btn btn-i btn-sm" onclick="modalTrb(\''+t.codigo+'\')">Ed</button> <button class="btn btn-sm" style="background:#dbeafe;font-size:10px" onclick="modalConfigBase(\''+t.codigo+'\')">Base</button> <button class="btn btn-d btn-sm" onclick="togTrb(\''+t.codigo+'\')">'+(t.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(t.activo?'#c6f6d5':'#e2e8f0')+';color:'+(t.activo?'#276749':'#718096')+';font-size:9px">'+(t.activo?'Activo':'Inactivo')+'</span>')+'</td></tr>'});document.getElementById('g1').innerHTML=html}
 function renderGAct(){var uni=document.getElementById('gFltU').value;var cat=document.getElementById('gFltC').value;var list=ACT.filter(function(a){return(!uni||a.unidad===uni)&&(!cat||a.categoria===cat)});
-  var html='';var adm=esAdmin();list.slice(0,60).forEach(function(a){
+  var html='';var adm=esAdmin();list.forEach(function(a){
     html+='<tr style="'+(a.activo?'':'opacity:.5')+'"><td style="font-size:10px">'+a.categoria+'</td><td style="font-size:10px">'+a.subcategoria+'</td><td style="font-size:10px">'+(a.indicador||'-')+'</td>';
     // Columna Módulo
     html+='<td style="text-align:center">';
@@ -2392,9 +2571,9 @@ function renderGAct(){var uni=document.getElementById('gFltU').value;var cat=doc
     html+='</td><td>';
     if(adm){html+='<select style="font-size:10px;padding:2px;border:1px solid #e2e8f0;border-radius:4px;width:100%" onchange="cambiarAprobador(\''+a.id+'\',this.value)">';html+='<option value="ADMIN" '+(a.aprobador==='ADMIN'?'selected':'')+'>Admin</option>';CARGOS.forEach(function(c2){html+='<option value="'+c2.id+'" '+(a.aprobador===c2.id?'selected':'')+'>'+c2.nombre+'</option>'});html+='</select>';}
     else{var cargoN=CARGOS.find(function(c2){return c2.id===a.aprobador});html+='<span style="font-size:10px">'+(cargoN?cargoN.nombre:a.aprobador||'-')+'</span>';}
-    html+='</td><td>'+(adm?'<button class="btn btn-d btn-sm" onclick="togAct(\''+a.id+'\')">'+( a.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(a.activo?'#c6f6d5':'#e2e8f0')+';font-size:9px">'+(a.activo?'Act':'Des')+'</span>')+'</td></tr>'});
+    html+='</td><td>'+(adm?'<button class="btn btn-i btn-sm" onclick="modalEditAct(\''+a.id+'\')" style="margin-right:3px">Ed</button>'+'<button class="btn btn-d btn-sm" onclick="togAct(\''+a.id+'\')">'+( a.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(a.activo?'#c6f6d5':'#e2e8f0')+';font-size:9px">'+(a.activo?'Act':'Des')+'</span>')+'</td></tr>'});
   document.getElementById('g2').innerHTML=html;
-  var fltC=document.getElementById('gFltC');if(fltC.options.length<=1){var cats=[];ACT.forEach(function(a){if(a.activo&&(!uni||a.unidad===uni)&&cats.indexOf(a.categoria)<0)cats.push(a.categoria)});cats.sort();cats.forEach(function(c2){var o=document.createElement('option');o.value=c2;o.textContent=c2;fltC.appendChild(o)})}
+  var fltC=document.getElementById('gFltC');var prevCat=fltC.value;while(fltC.options.length>1)fltC.remove(1);var cats=[];ACT.forEach(function(a){if(a.activo&&(!uni||a.unidad===uni)&&cats.indexOf(a.categoria)<0)cats.push(a.categoria)});cats.sort();cats.forEach(function(c2){var o=document.createElement('option');o.value=c2;o.textContent=c2;fltC.appendChild(o)});if(prevCat&&cats.indexOf(prevCat)>=0)fltC.value=prevCat;
 }
 function renderGMod(){
   var html='';var adm=esAdmin();
@@ -2430,10 +2609,10 @@ function tienePermiso(clave){
 }
 function esAdmin(){return tienePermiso('editar_gestion');}
 function soloAdmin(){if(!esAdmin()){alert('Solo el Administrador puede realizar cambios en Gestión.');return false;}return true;}
-function togTrb(cod){if(!soloAdmin())return;var t=TRB.find(function(x){return x.codigo===cod});if(t){t.activo=!t.activo;guardarLS();renderGTrb()}}
-function cambiarAprobador(id,cargo){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.aprobador=cargo;guardarLS()}}
-function togAct(id){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.activo=!a.activo;guardarLS();renderGAct()}}
-function togUsaModulo(id){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.usa_modulo=!a.usa_modulo;guardarLS();renderGAct();}}
+function togTrb(cod){if(!soloAdmin())return;var t=TRB.find(function(x){return x.codigo===cod});if(t){t.activo=!t.activo;guardarLS();renderGTrb();if(SP_READY)spGuardarTrabajador(t).catch(function(e){toast('⚠️ Error SP TRB: '+e.message,'warn');});}}
+function cambiarAprobador(id,cargo){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.aprobador=cargo;guardarLS();if(SP_READY)spGuardarActividad(a).catch(function(e){toast('⚠️ Error SP ACT: '+e.message,'warn');});}}
+function togAct(id){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.activo=!a.activo;guardarLS();renderGAct();if(SP_READY)spGuardarActividad(a).catch(function(e){toast('⚠️ Error SP ACT: '+e.message,'warn');});}}
+function togUsaModulo(id){if(!soloAdmin())return;var a=ACT.find(function(x){return x.id===id});if(a){a.usa_modulo=!a.usa_modulo;guardarLS();renderGAct();if(SP_READY)spGuardarActividad(a).catch(function(e){toast('⚠️ Error SP ACT: '+e.message,'warn');});}}
 function togMod(id){if(!soloAdmin())return;var m=MOD.find(function(x){return x.id===id});if(m){m.activo=!m.activo;guardarLS();renderGMod()}}
 function delUsr(u){if(!soloAdmin())return;if(confirm('Eliminar?')){usr=usr.filter(function(x){return x.usr!==u});guardarLS();renderGUsr()}}
 // MODALES
@@ -2490,6 +2669,7 @@ function doSaveConfigBase(){
   t.mods_base=mods;
   guardarLS();cerrarModal();renderGTrb();
   toast((actId?'✅':'ℹ️')+' '+t.nombre+': '+(actId?'actividad base configurada':'sin precarga'),'info');
+  if(SP_READY&&t)spGuardarTrabajador(t).catch(function(e){toast('⚠️ Error SP TRB: '+e.message,'warn');});
 }
 function modalTrb(cod){if(!soloAdmin())return;var isNew=!cod;var t=isNew?{codigo:'',nombre:'',area:'',supervisor:''}:TRB.find(function(x){return x.codigo===cod});if(!isNew&&!t)return;
   var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>'+(isNew?'Agregar':'Editar')+' Trabajador</h2><input type="hidden" id="mTMode" value="'+(isNew?'new':cod)+'">';
@@ -2500,7 +2680,7 @@ function modalTrb(cod){if(!soloAdmin())return;var isNew=!cod;var t=isNew?{codigo
   mh+='<div style="display:flex;gap:6px;margin-top:12px"><button class="btn btn-s" onclick="doSaveTrb()">Guardar</button><button class="btn btn-d" onclick="cerrarModal()">Cancelar</button></div></div></div>';
   document.getElementById('modalContainer').innerHTML=mh}
 function doSaveTrb(){var mode=document.getElementById('mTMode').value;var c=document.getElementById('mTC').value.trim(),n=document.getElementById('mTN').value.trim(),a=document.getElementById('mTA').value.trim(),s=document.getElementById('mTS').value.trim();
-  if(!c||!n){alert('C\u00f3digo y nombre requeridos');return}if(mode==='new'){if(TRB.find(function(x){return x.codigo===c})){alert('Ya existe');return}TRB.push({codigo:c,nombre:n,area:a,supervisor:s,actividad_base:'',activo:true})}else{var t=TRB.find(function(x){return x.codigo===mode});if(t){t.nombre=n;t.area=a;t.supervisor=s}}guardarLS();cerrarModal();renderGTrb();toast('✅ Trabajador guardado')}
+  if(!c||!n){alert('Código y nombre requeridos');return} var tObj; if(mode==='new'){if(TRB.find(function(x){return x.codigo===c})){alert('Ya existe');return}tObj={codigo:c,nombre:n,area:a,supervisor:s,actividad_base:'',activo:true};TRB.push(tObj);}else{tObj=TRB.find(function(x){return x.codigo===mode});if(tObj){tObj.nombre=n;tObj.area=a;tObj.supervisor=s;}} guardarLS();cerrarModal();renderGTrb();toast('✅ Trabajador guardado'); if(SP_READY&&tObj)spGuardarTrabajador(tObj).catch(function(e){toast('⚠️ Error SP TRB: '+e.message,'warn');});}
 function modalMod(id){if(!soloAdmin())return;var isNew=!id;var m=isNew?{id:'',nombre:'',unidad:''}:MOD.find(function(x){return x.id===id});if(!isNew&&!m)return;
   var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>'+(isNew?'Agregar':'Editar')+' M\u00f3dulo</h2><input type="hidden" id="mMMode" value="'+(isNew?'new':id)+'">';
   mh+='<div class="fg"><label>ID</label><input id="mMI" value="'+(m.id||'')+'" '+(isNew?'':'readonly')+'></div>';
@@ -2523,7 +2703,85 @@ function modalAct(){if(!soloAdmin())return;var mh='<div class="modal-bg" onclick
   document.getElementById('modalContainer').innerHTML=mh}
 function doSaveAct(){var u=document.getElementById('mAU').value,c=document.getElementById('mAC').value.trim(),s=document.getElementById('mAS').value.trim(),ap=document.getElementById('mAP').value;
   if(!c||!s){alert('Requeridos');return}var maxId=0;ACT.forEach(function(a){var n=parseInt(a.id)||0;if(n>maxId)maxId=n});
-  ACT.push({id:String(maxId+1),unidad:u,categoria:c,subcategoria:s,indicador:document.getElementById('mAI').value.trim(),desc_rend:document.getElementById('mAD').value.trim(),usa_modulo:true,orden:maxId+1,activo:true,aprobador:ap});guardarLS();cerrarModal();renderGAct();toast('✅ Actividad guardada')}
+  ACT.push({id:String(maxId+1),unidad:u,categoria:c,subcategoria:s,indicador:document.getElementById('mAI').value.trim(),desc_rend:document.getElementById('mAD').value.trim(),usa_modulo:true,orden:maxId+1,activo:true,aprobador:ap}); var newAct=ACT[ACT.length-1]; guardarLS();cerrarModal();renderGAct();toast('✅ Actividad guardada'); if(SP_READY&&newAct)spGuardarActividad(newAct).catch(function(e){toast('⚠️ Error SP ACT: '+e.message,'warn');});}
+function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function modalEditAct(id){
+  if(!soloAdmin())return;
+  var a=ACT.find(function(x){return x.id===id});if(!a)return;
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Editar Actividad #'+_esc(a.id)+'</h2>';
+  mh+='<input type="hidden" id="eAId" value="'+_esc(a.id)+'">';
+  mh+='<div class="fg"><label>Unidad</label><select id="eAU">';
+  UNI.forEach(function(u){mh+='<option value="'+_esc(u.id)+'"'+(a.unidad===u.id?' selected':'')+'>'+_esc(u.id)+'</option>'});
+  mh+='</select></div>';
+  mh+='<div class="fg"><label>Categoría</label><input id="eAC" value="'+_esc(a.categoria)+'"></div>';
+  mh+='<div class="fg"><label>SubCategoría</label><input id="eAS" value="'+_esc(a.subcategoria)+'"></div>';
+  mh+='<div class="grid-2">';
+  mh+='<div class="fg"><label>Indicador</label><input id="eAI" value="'+_esc(a.indicador||'')+'"></div>';
+  mh+='<div class="fg"><label>Desc. Rendimiento</label><input id="eAD" value="'+_esc(a.desc_rend||'')+'"></div></div>';
+  mh+='<div class="grid-2">';
+  mh+='<div class="fg"><label>Orden</label><input id="eAO" type="number" value="'+(a.orden||0)+'" min="0"></div>';
+  mh+='<div class="fg"><label>Aprobador</label><select id="eAP"><option value="ADMIN"'+(a.aprobador==="ADMIN"?' selected':'')+'>Admin</option>';
+  CARGOS.forEach(function(c){mh+='<option value="'+c.id+'"'+(a.aprobador===c.id?' selected':'')+'>'+_esc(c.nombre)+'</option>'});
+  mh+='</select></div></div>';
+  mh+='<div class="fg" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="eAM"'+(a.usa_modulo?' checked':'')+' style="width:15px;height:15px"><label style="margin:0;font-weight:500">Usa Módulo</label></div>';
+  mh+='<div style="display:flex;gap:6px;margin-top:12px"><button class="btn btn-s" onclick="doEditAct()">Guardar</button><button class="btn btn-d" onclick="cerrarModal()">Cancelar</button></div></div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+}
+function doEditAct(){
+  var id=document.getElementById('eAId').value;
+  var a=ACT.find(function(x){return x.id===id});if(!a)return;
+  var cat=document.getElementById('eAC').value.trim();
+  var sub=document.getElementById('eAS').value.trim();
+  if(!cat||!sub){alert('Categoría y SubCategoría requeridas');return;}
+  a.unidad=document.getElementById('eAU').value;
+  a.categoria=cat;a.subcategoria=sub;
+  a.indicador=document.getElementById('eAI').value.trim();
+  a.desc_rend=document.getElementById('eAD').value.trim();
+  a.orden=parseInt(document.getElementById('eAO').value)||a.orden;
+  a.aprobador=document.getElementById('eAP').value;
+  a.usa_modulo=document.getElementById('eAM').checked;
+  guardarLS();cerrarModal();renderGAct();
+  toast('✅ Actividad actualizada');
+  if(SP_READY)spGuardarActividad(a).catch(function(e){toast('⚠️ Error SP ACT: '+e.message,'warn');});
+}
+function modalRenombrarCat(){
+  if(!soloAdmin())return;
+  var cats=[];ACT.forEach(function(a){if(cats.indexOf(a.categoria)<0)cats.push(a.categoria)});cats.sort();
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>✏️ Renombrar Categoría</h2>';
+  mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">Cambia el nombre de una categoría en <b>todas</b> sus actividades a la vez.</p>';
+  mh+='<div class="fg"><label>Categoría actual</label><select id="rCatOld" onchange="rCatPreview()"><option value="">-- Selecciona --</option>';
+  cats.forEach(function(c){mh+='<option value="'+_esc(c)+'">'+_esc(c)+'</option>'});
+  mh+='</select></div>';
+  mh+='<div id="rCatInfo" style="font-size:11px;color:#4299e1;margin:-4px 0 10px;min-height:16px"></div>';
+  mh+='<div class="fg"><label>Nuevo nombre</label><input id="rCatNew" placeholder="Escribe el nuevo nombre..." oninput="rCatPreview()"></div>';
+  mh+='<div style="display:flex;gap:6px;margin-top:12px"><button class="btn btn-s" onclick="doRenombrarCat()">Renombrar</button><button class="btn btn-d" onclick="cerrarModal()">Cancelar</button></div></div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+}
+function rCatPreview(){
+  var old=document.getElementById('rCatOld').value;
+  var info=document.getElementById('rCatInfo');if(!info)return;
+  if(!old){info.textContent='';return;}
+  var n=ACT.filter(function(a){return a.categoria===old}).length;
+  info.textContent=n+' actividad'+(n!==1?'es':'')+' en esta categoría';
+}
+function doRenombrarCat(){
+  var old=document.getElementById('rCatOld').value;
+  var nuevo=document.getElementById('rCatNew').value.trim();
+  if(!old){alert('Selecciona una categoría');return;}
+  if(!nuevo){alert('Escribe el nuevo nombre');return;}
+  if(old===nuevo){cerrarModal();return;}
+  var n=0;ACT.forEach(function(a){if(a.categoria===old){a.categoria=nuevo;n++;}});
+  guardarLS();cerrarModal();renderGAct();
+  toast('✅ '+n+' actividad'+(n!==1?'es':'')+' renombrada'+(n!==1?'s':'')+' → "'+nuevo+'"','info',3500);
+  if(SP_READY){
+    var afect=ACT.filter(function(a){return a.categoria===nuevo});
+    var ok=0,err=0;
+    (function syn(i){
+      if(i>=afect.length){if(err>0)toast('⚠️ SP: '+ok+' ok, '+err+' errores','warn');return;}
+      Promise.all(afect.slice(i,i+5).map(function(a){return spGuardarActividad(a).then(function(){ok++;}).catch(function(){err++;})})).then(function(){syn(i+5);});
+    })(0);
+  }
+}
 function modalUsr(){if(!soloAdmin())return;var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Agregar Usuario</h2>';
   mh+='<div class="fg"><label>Usuario</label><input id="mUU"></div><div class="fg"><label>Clave</label><input type="password" id="mUP"></div>';
   mh+='<div class="fg"><label>Rol</label><select id="mUR"><option>admin</option><option>operador</option><option>supervisor</option><option>operario</option></select></div>';
