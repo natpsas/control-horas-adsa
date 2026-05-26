@@ -2965,10 +2965,12 @@ function renderPlanDia(){
       if(asigs.length){
         conAsig++;
         asigs.forEach(function(a,i){
+          var actObj=ACT.find(function(x){return x.id===a.act});
+          var actNombre=actObj?actObj.subcategoria:(a.sub||a.act||'—');
           var mods=a.mods&&a.mods.length?a.mods.map(function(mid){var m=MOD.find(function(x){return x.id===mid});return m?m.nombre:mid}).join(', '):'—';
           html+='<tr>';
           html+='<td style="font-weight:'+(i===0?'600':'400')+';color:#2d3748">'+(i===0?t.nombre:'&nbsp;')+'</td>';
-          html+='<td style="color:#4a5568">'+a.sub+'</td>';
+          html+='<td style="color:#4a5568">'+actNombre+'</td>';
           html+='<td style="color:#718096;font-size:11px">'+mods+'</td>';
           html+='<td style="text-align:center;font-weight:600">'+a.h+'</td>';
           html+='<td style="text-align:center"><span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+(a.x?'#fef3c7':'#f0fff4')+';color:'+(a.x?'#92400e':'#276749')+'">'+(a.x?'EXTRA':'NORMAL')+'</span></td>';
