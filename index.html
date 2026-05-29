@@ -1820,14 +1820,17 @@ function desconsolidar(cod){
   var trb=TRB.find(function(t){return t.codigo===cod});
   var regsD=reg.filter(function(r){return r.w===cod&&r.f===fechaSel});
   if(!confirm('Reabrir '+trb.nombre+'? Se borrar\u00e1n '+regsD.length+' registros.'))return;
-  // Restaurar rendimiento y módulos desde reg (por si se editaron en Tab 3)
-  // NO tocar aEntry.h — las horas en asg ya son las que ingresó el operador
+  // Garantizar entradas asg para cada actividad NORMAL antes de borrar reg
+  // Si existen: actualizar rend/mods. Si no existen (SP sync pudo haberlas borrado): recrear desde reg
   regsD.forEach(function(r){
     if(r.tp==='EXTRAS')return;
     var aEntry=asg.find(function(a){return a.w===cod&&a.f===fechaSel&&String(a.act)===String(r.act)&&!a.na});
     if(aEntry){
       if(r.rend!=null)aEntry.rend=r.rend;
       if(r.mods&&r.mods.length)aEntry.mods=r.mods;
+    }else{
+      // Recrear entrada asg desde el registro consolidado
+      asg.push({f:fechaSel,w:cod,act:r.act,uni:r.uni,h:r.h,x:false,mods:r.mods||[],na:false,mt:'',obs:'',rend:r.rend||null});
     }
   });
   reg=reg.filter(function(r){return !(r.w===cod&&r.f===fechaSel)});
