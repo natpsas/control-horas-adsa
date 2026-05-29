@@ -1858,19 +1858,23 @@ function consolidar(cod){
   var hNorm=diaSem===0?0:Math.min(hrs,maxN);var hExt=diaSem===0?hrs:Math.max(0,hrs-maxN);var excedeH=hu&&hrs>hu.h;
   // Leer horas individuales desde los inputs del formulario
   acts2.forEach(function(a,i){if(document.getElementById('ah_'+cod+'_'+i+'_h'))a.h=getHoras('ah_'+cod+'_'+i);});
-  var totalActH=0;acts2.forEach(function(a){totalActH+=a.h||0});
-  // Crear registro por actividad — hr=a.h preserva exactamente lo que ingresó el operador
-  acts2.forEach(function(a){var act=ACT.find(function(x){return x.id===a.act});
-    var tp=diaSem===0?'EXTRAS':(a.x?'EXTRAS':'NORMAL');
-    reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:a.act,uni:a.uni,cat:act?act.categoria:'',sub:act?act.subcategoria:'',
-      h:a.h,hr:a.h,rend:a.rend||null,ind:act?act.indicador:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
-      mods:a.mods||[],obs:obs,ref:ref,tp:tp,st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''})});
-  // Registro separado de EXTRAS si hay horas adicionales no marcadas explícitamente como extras
   var hayExtExplicitas=acts2.some(function(a){return a.x;});
-  if(hExt>0&&!hayExtExplicitas&&diaSem!==0){var a0=acts2[0],act0=ACT.find(function(x){return x.id===a0.act});
-    reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:a0.act,uni:a0.uni,cat:act0?act0.categoria:'',sub:act0?act0.subcategoria:'',
+  // Actividad con más horas: de ella se extrae el exceso para crear el registro EXTRAS
+  var actMax=(!hayExtExplicitas&&hExt>0&&diaSem!==0)?acts2.reduce(function(m,a){return a.h>m.h?a:m},acts2[0]):null;
+  acts2.forEach(function(a){
+    var act=ACT.find(function(x){return x.id===a.act});
+    var tp=diaSem===0?'EXTRAS':(a.x?'EXTRAS':'NORMAL');
+    // Para la actividad con más horas: NORMAL = sus horas menos el exceso
+    var hrReg=(actMax&&a===actMax)?Math.max(0,a.h-hExt):a.h;
+    reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:a.act,uni:a.uni,cat:act?act.categoria:'',sub:act?act.subcategoria:'',
+      h:a.h,hr:hrReg,rend:a.rend||null,ind:act?act.indicador:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
+      mods:a.mods||[],obs:obs,ref:ref,tp:tp,st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''});});
+  // Registro EXTRAS para el exceso de jornada, asociado a la actividad con más horas
+  if(actMax){
+    var actM=ACT.find(function(x){return x.id===actMax.act});
+    reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:actMax.act,uni:actMax.uni,cat:actM?actM.categoria:'',sub:actM?actM.subcategoria:'',
       h:hExt,hr:hExt,rend:null,ind:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
-      mods:a0.mods||[],obs:'EXTRAS - '+obs,ref:ref,tp:'EXTRAS',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''})}
+      mods:actMax.mods||[],obs:'EXTRAS - '+obs,ref:ref,tp:'EXTRAS',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''});}
   guardarLS();stats();toast('✅ Consolidado: '+hNorm.toFixed(1)+'h'+(hExt>0?' + '+hExt.toFixed(1)+'h ext':''));renderT2();renderT1();
   // Sincronizar a lista SP fila-por-registro
   if(SP_READY){var nuevos=reg.filter(function(r){return r.f===d&&r.w===cod});Promise.all(nuevos.map(function(r){return spEscribirReg(r).catch(function(){});})).then(function(){guardarLS();});}
@@ -2009,28 +2013,8 @@ function guardarEdicion(ri){
   var emBox=document.getElementById('em_'+ri);reg[ri].mods=emBox?[].slice.call(emBox.querySelectorAll('input:checked')).map(function(c){return c.value}):[];
   reg[ri].obs=document.getElementById('eo_'+ri).value;
   var eref=document.getElementById('eref_'+ri);if(eref)reg[ri].ref=eref.value.trim();
-  // Si el registro es NORMAL y las horas superan el máximo, separar extras
-  if(reg[ri].tp==='NORMAL'){
-    var fechaObj=new Date(reg[ri].f+'T12:00:00');var diaSem=fechaObj.getDay();
-    var maxN=diaSem===6?4:diaSem===0?0:8;
-    var yaExiste=reg.find(function(r,j){return j!==ri&&r.w===reg[ri].w&&r.f===reg[ri].f&&r.tp==='EXTRAS'&&r.act===reg[ri].act});
-    if(diaSem!==0&&hrNueva>maxN&&!yaExiste){
-      var hNorm=maxN;var hExt=hrNueva-maxN;
-      reg[ri].hr=hNorm;
-      var rExt={id:genRegId(),f:reg[ri].f,w:reg[ri].w,n:reg[ri].n,ar:reg[ri].ar,act:reg[ri].act,uni:reg[ri].uni,
-        cat:reg[ri].cat,sub:reg[ri].sub,h:hExt,hr:hExt,rend:null,ind:'',
-        hhu:reg[ri].hhu,ehu:reg[ri].ehu,shu:reg[ri].shu,mods:reg[ri].mods||[],
-        obs:'EXTRAS - '+reg[ri].obs,ref:reg[ri].ref,tp:'EXTRAS',st:'pendiente',excede:true,
-        fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''};
-      reg.push(rExt);
-      toast('⚡ '+hNorm+'h NORMAL + '+hExt.toFixed(1)+'h EXTRAS creadas','info');
-      if(SP_READY)spEscribirReg(rExt).catch(function(){});
-    }else{
-      reg[ri].hr=hrNueva;
-    }
-  }else{
-    reg[ri].hr=hrNueva;
-  }
+  // Guardar horas exactamente como las editó el operador — sin crear registros automáticos
+  reg[ri].hr=hrNueva;
   guardarLS();renderT3();
   if(SP_READY)spEscribirReg(reg[ri]).catch(function(){});
 }
