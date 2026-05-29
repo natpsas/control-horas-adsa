@@ -1820,12 +1820,12 @@ function desconsolidar(cod){
   var trb=TRB.find(function(t){return t.codigo===cod});
   var regsD=reg.filter(function(r){return r.w===cod&&r.f===fechaSel});
   if(!confirm('Reabrir '+trb.nombre+'? Se borrar\u00e1n '+regsD.length+' registros.'))return;
-  // Restaurar valores editados de reg de vuelta a asg para no perder cambios del operador
+  // Restaurar rendimiento y módulos desde reg (por si se editaron en Tab 3)
+  // NO tocar aEntry.h — las horas en asg ya son las que ingresó el operador
   regsD.forEach(function(r){
-    if(r.tp==='EXTRAS')return; // el registro de extras no tiene entrada individual en asg
+    if(r.tp==='EXTRAS')return;
     var aEntry=asg.find(function(a){return a.w===cod&&a.f===fechaSel&&String(a.act)===String(r.act)&&!a.na});
     if(aEntry){
-      aEntry.h=r.hr; // restaurar horas editadas
       if(r.rend!=null)aEntry.rend=r.rend;
       if(r.mods&&r.mods.length)aEntry.mods=r.mods;
     }
