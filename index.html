@@ -313,6 +313,20 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 </div>
 </div>
 
+<div class="card" style="margin-top:12px">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+    <h2 style="margin:0">⛔ Inasistencias</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <input type="date" id="gInaDesde" style="padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px" onchange="renderGIna()">
+      <input type="date" id="gInaHasta" style="padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px" onchange="renderGIna()">
+      <select id="gInaArea" onchange="renderGIna()" style="padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todas las áreas</option></select>
+      <select id="gInaMot" onchange="renderGIna()" style="padding:4px 7px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todos los motivos</option></select>
+    </div>
+  </div>
+  <div id="gInaSum" style="margin-bottom:8px"></div>
+  <div style="overflow-x:auto"><table><thead><tr><th>Fecha</th><th>Trabajador</th><th>Área</th><th>Motivo</th><th>Observación</th><th>Acciones</th></tr></thead><tbody id="gInaTbl"></tbody></table></div>
+</div>
+
 <div class="card" style="margin-top:12px"><h2>🔐 Permisos por Rol</h2>
 <p style="font-size:11px;color:#718096;margin-bottom:10px">Admin siempre tiene todos los permisos. Marca o desmarca para los demás roles y presiona Guardar.</p>
 <div style="overflow-x:auto"><table style="width:100%"><thead><tr><th style="text-align:left;padding:6px">Funcionalidad</th><th style="text-align:center;color:#667eea;padding:6px">Admin</th><th style="text-align:center;color:#38a169;padding:6px">Operador</th><th style="text-align:center;color:#d97706;padding:6px">Supervisor</th><th style="text-align:center;color:#e53e3e;padding:6px">Operario</th></tr></thead><tbody id="g6Body"></tbody></table></div>
@@ -1103,6 +1117,8 @@ function modalConexionPA(){
 // =====================================================
 
 function cambiarFecha(){
+  // Guardar módulos del tab activo antes de cambiar fecha
+  guardarModsEnMem();guardarModsConsol();
   fechaSel=document.getElementById('fechaTrabajo').value;
   // Sincronizar fecha del huellero
   var fhEl=document.getElementById('fechaH');
@@ -1656,6 +1672,8 @@ function renderT2(){
   // Leer filtros (sin reconstruir la barra si ya existe)
   var fltBusq=(document.getElementById('t2BusqW')?document.getElementById('t2BusqW').value||'':'').toLowerCase();
   var fltPend=document.getElementById('t2FltPend')?document.getElementById('t2FltPend').checked:false;
+  var fltArea2=(document.getElementById('t2FltArea')?document.getElementById('t2FltArea').value||'':'');
+  var fltEst2=(document.getElementById('t2FltEst')?document.getElementById('t2FltEst').value||'':'');
   var wrks=asg.filter(function(a){return a.f===d&&!a.na});
   var codesSet={};wrks.forEach(function(a){codesSet[a.w]=1});
   // Incluir también trabajadores que tienen reg pero perdieron su asg
@@ -1664,15 +1682,27 @@ function renderT2(){
   var codes=Object.keys(codesSet).sort(function(a,b){var ta=TRB.find(function(t){return t.codigo===a});var tb=TRB.find(function(t){return t.codigo===b});return (ta?ta.nombre:'').localeCompare(tb?tb.nombre:'')});
   // Aplicar filtro de b\u00fasqueda
   if(fltBusq)codes=codes.filter(function(cod){var t=TRB.find(function(t){return t.codigo===cod});return t&&(t.nombre.toLowerCase().indexOf(fltBusq)>=0||t.codigo.toLowerCase().indexOf(fltBusq)>=0)});
-  // Aplicar filtro "solo pendientes" (sin consolidar)
-  if(fltPend)codes=codes.filter(function(cod){return !reg.some(function(r){return r.w===cod&&r.f===d})});
+  // Aplicar filtro de área
+  if(fltArea2)codes=codes.filter(function(cod){var t=TRB.find(function(t){return t.codigo===cod});return t&&t.area===fltArea2});
+  // Aplicar filtro de estado consolidado/pendiente
+  if(fltEst2==='pend')codes=codes.filter(function(cod){return !reg.some(function(r){return r.w===cod&&r.f===d})});
+  else if(fltEst2==='cons')codes=codes.filter(function(cod){return reg.some(function(r){return r.w===cod&&r.f===d})});
+  // Compatibilidad con checkbox legado solo pendientes
+  else if(fltPend)codes=codes.filter(function(cod){return !reg.some(function(r){return r.w===cod&&r.f===d})});
   var hD=hue[d]||{};
   var inas=asg.filter(function(a){return a.f===d&&a.na});var fechaObj=new Date(d+'T12:00:00');var diaSem=fechaObj.getDay();
   var maxN=diaSem===6?4:diaSem===0?0:8;var dias=['Dom','Lun','Mar','Mi\u00e9','Jue','Vie','S\u00e1b'];
   // Barra de filtros \u2014 solo se construye una vez (no se destruye al tipear)
   var fltDiv=document.getElementById('t2Filtros');
   if(!document.getElementById('t2BusqW')){
-    fltDiv.innerHTML='<div class="t2-flt"><label>\ud83d\udd0d Trabajador:</label><input type="text" id="t2BusqW" placeholder="Buscar por nombre..." oninput="renderT2()" style="width:200px"><label style="margin-left:4px"><input type="checkbox" id="t2FltPend" onchange="renderT2()" style="margin-right:4px">Solo pendientes</label><span id="t2Count" style="margin-left:auto;font-size:11px;color:#718096"></span></div>';
+    // Construir opciones de \u00e1rea din\u00e1micamente
+    var areasT2=[...new Set(TRB.filter(function(t){return t.activo}).map(function(t){return t.area}).filter(Boolean))].sort();
+    var areaOptsT2=areasT2.map(function(a){return '<option value="'+a+'">'+a+'</option>'}).join('');
+    fltDiv.innerHTML='<div class="t2-flt" style="flex-wrap:wrap;gap:8px">'+
+      '<label>\ud83d\udd0d Trabajador:</label><input type="text" id="t2BusqW" placeholder="Buscar por nombre..." oninput="renderT2()" style="width:170px">'+
+      '<label>\u00c1rea:</label><select id="t2FltArea" onchange="renderT2()" style="padding:4px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todas</option>'+areaOptsT2+'</select>'+
+      '<label>Estado:</label><select id="t2FltEst" onchange="renderT2()" style="padding:4px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todos</option><option value="pend">Pendientes</option><option value="cons">Consolidados</option></select>'+
+      '<span id="t2Count" style="margin-left:auto;font-size:11px;color:#718096"></span></div>';
   }
   // Actualizar contador sin reconstruir la barra
   var countEl=document.getElementById('t2Count');if(countEl)countEl.textContent=codes.length+' trabajador(es)';
@@ -1790,6 +1820,16 @@ function desconsolidar(cod){
   var trb=TRB.find(function(t){return t.codigo===cod});
   var regsD=reg.filter(function(r){return r.w===cod&&r.f===fechaSel});
   if(!confirm('Reabrir '+trb.nombre+'? Se borrar\u00e1n '+regsD.length+' registros.'))return;
+  // Restaurar valores editados de reg de vuelta a asg para no perder cambios del operador
+  regsD.forEach(function(r){
+    if(r.tp==='EXTRAS')return; // el registro de extras no tiene entrada individual en asg
+    var aEntry=asg.find(function(a){return a.w===cod&&a.f===fechaSel&&String(a.act)===String(r.act)&&!a.na});
+    if(aEntry){
+      aEntry.h=r.hr; // restaurar horas editadas
+      if(r.rend!=null)aEntry.rend=r.rend;
+      if(r.mods&&r.mods.length)aEntry.mods=r.mods;
+    }
+  });
   reg=reg.filter(function(r){return !(r.w===cod&&r.f===fechaSel)});
   guardarLS();stats();renderT2();renderT1();
   if(SP_READY)Promise.all(regsD.map(function(r){return spEliminarReg(r).catch(function(){});}));
@@ -1819,13 +1859,15 @@ function consolidar(cod){
   // Leer horas individuales desde los inputs del formulario
   acts2.forEach(function(a,i){if(document.getElementById('ah_'+cod+'_'+i+'_h'))a.h=getHoras('ah_'+cod+'_'+i);});
   var totalActH=0;acts2.forEach(function(a){totalActH+=a.h||0});
+  // Crear registro por actividad — hr=a.h preserva exactamente lo que ingresó el operador
   acts2.forEach(function(a){var act=ACT.find(function(x){return x.id===a.act});
-    // hr = horas normales proporcionales al peso de cada actividad
-    var hrNorm=totalActH>0?Math.round(a.h*(hNorm/totalActH)*2)/2:hNorm/acts2.length;
+    var tp=diaSem===0?'EXTRAS':(a.x?'EXTRAS':'NORMAL');
     reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:a.act,uni:a.uni,cat:act?act.categoria:'',sub:act?act.subcategoria:'',
-      h:a.h,hr:hrNorm,rend:a.rend||null,ind:act?act.indicador:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
-      mods:a.mods||[],obs:obs,ref:ref,tp:'NORMAL',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''})});
-  if(hExt>0){var a0=acts2[0],act0=ACT.find(function(x){return x.id===a0.act});
+      h:a.h,hr:a.h,rend:a.rend||null,ind:act?act.indicador:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
+      mods:a.mods||[],obs:obs,ref:ref,tp:tp,st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''})});
+  // Registro separado de EXTRAS si hay horas adicionales no marcadas explícitamente como extras
+  var hayExtExplicitas=acts2.some(function(a){return a.x;});
+  if(hExt>0&&!hayExtExplicitas&&diaSem!==0){var a0=acts2[0],act0=ACT.find(function(x){return x.id===a0.act});
     reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:a0.act,uni:a0.uni,cat:act0?act0.categoria:'',sub:act0?act0.subcategoria:'',
       h:hExt,hr:hExt,rend:null,ind:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
       mods:a0.mods||[],obs:'EXTRAS - '+obs,ref:ref,tp:'EXTRAS',st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''})}
@@ -1962,11 +2004,33 @@ function selAllModE(ri){
 function editarReg(ri){document.getElementById('edit_'+ri).style.display=''}
 function cancelarEdicion(ri){document.getElementById('edit_'+ri).style.display='none'}
 function guardarEdicion(ri){
-  reg[ri].hr=parseFloat(document.getElementById('eh_'+ri).value)||0;
+  var hrNueva=parseFloat(document.getElementById('eh_'+ri).value)||0;
   reg[ri].rend=parseFloat(document.getElementById('er_'+ri).value)||null;
   var emBox=document.getElementById('em_'+ri);reg[ri].mods=emBox?[].slice.call(emBox.querySelectorAll('input:checked')).map(function(c){return c.value}):[];
   reg[ri].obs=document.getElementById('eo_'+ri).value;
   var eref=document.getElementById('eref_'+ri);if(eref)reg[ri].ref=eref.value.trim();
+  // Si el registro es NORMAL y las horas superan el máximo, separar extras
+  if(reg[ri].tp==='NORMAL'){
+    var fechaObj=new Date(reg[ri].f+'T12:00:00');var diaSem=fechaObj.getDay();
+    var maxN=diaSem===6?4:diaSem===0?0:8;
+    var yaExiste=reg.find(function(r,j){return j!==ri&&r.w===reg[ri].w&&r.f===reg[ri].f&&r.tp==='EXTRAS'&&r.act===reg[ri].act});
+    if(diaSem!==0&&hrNueva>maxN&&!yaExiste){
+      var hNorm=maxN;var hExt=hrNueva-maxN;
+      reg[ri].hr=hNorm;
+      var rExt={id:genRegId(),f:reg[ri].f,w:reg[ri].w,n:reg[ri].n,ar:reg[ri].ar,act:reg[ri].act,uni:reg[ri].uni,
+        cat:reg[ri].cat,sub:reg[ri].sub,h:hExt,hr:hExt,rend:null,ind:'',
+        hhu:reg[ri].hhu,ehu:reg[ri].ehu,shu:reg[ri].shu,mods:reg[ri].mods||[],
+        obs:'EXTRAS - '+reg[ri].obs,ref:reg[ri].ref,tp:'EXTRAS',st:'pendiente',excede:true,
+        fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''};
+      reg.push(rExt);
+      toast('⚡ '+hNorm+'h NORMAL + '+hExt.toFixed(1)+'h EXTRAS creadas','info');
+      if(SP_READY)spEscribirReg(rExt).catch(function(){});
+    }else{
+      reg[ri].hr=hrNueva;
+    }
+  }else{
+    reg[ri].hr=hrNueva;
+  }
   guardarLS();renderT3();
   if(SP_READY)spEscribirReg(reg[ri]).catch(function(){});
 }
@@ -2543,7 +2607,7 @@ function limpiarTodo(){if(!confirm('BORRAR TODO?'))return;limpiando=true;var key
 function renderGestion(){
   var t5=document.getElementById('t5');
   if(t5){if(esAdmin())t5.classList.remove('no-admin-gestion');else t5.classList.add('no-admin-gestion');}
-  renderGTrb();renderGAct();renderGMod();renderGUsr();renderGCargos();renderGPermisos();
+  renderGTrb();renderGAct();renderGMod();renderGUsr();renderGCargos();renderGPermisos();renderGIna();
 }
 function renderGPermisos(){
   var adm=usuarioLogueado==='Admin';
@@ -2943,6 +3007,97 @@ function doAsignacionMasiva(){
   msg+=' — "'+( act?act.subcategoria:actId)+'"';
   toast(msg,'info',4000);
 }
+// === INASISTENCIAS (GESTION) ===
+function renderGIna(){
+  // Poblar filtros la primera vez
+  var selArea=document.getElementById('gInaArea');
+  if(selArea&&selArea.options.length<=1){
+    var areas=[];TRB.forEach(function(t){if(areas.indexOf(t.area)<0)areas.push(t.area)});
+    areas.sort().forEach(function(a){var o=document.createElement('option');o.value=a;o.textContent=a;selArea.appendChild(o)});
+  }
+  var selMot=document.getElementById('gInaMot');
+  if(selMot&&selMot.options.length<=1){
+    MOTIVOS_NA.forEach(function(m){var o=document.createElement('option');o.value=m[0];o.textContent=m[1];selMot.appendChild(o)});
+  }
+  // Defaults de fecha: mes en curso
+  var dEl=document.getElementById('gInaDesde'),hEl=document.getElementById('gInaHasta');
+  if(dEl&&!dEl.value){var hoy=new Date();dEl.value=hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0')+'-01';}
+  if(hEl&&!hEl.value){var h2=new Date();hEl.value=h2.getFullYear()+'-'+String(h2.getMonth()+1).padStart(2,'0')+'-'+String(h2.getDate()).padStart(2,'0');}
+  var desde=dEl?dEl.value:'',hasta=hEl?hEl.value:'';
+  var areaFlt=selArea?selArea.value:'';
+  var motFlt=selMot?selMot.value:'';
+  // Filtrar inasistencias
+  var inas=asg.filter(function(a){
+    if(!a.na)return false;
+    if(desde&&a.f<desde)return false;
+    if(hasta&&a.f>hasta)return false;
+    var trb=TRB.find(function(t){return t.codigo===a.w});
+    if(areaFlt&&(!trb||trb.area!==areaFlt))return false;
+    if(motFlt&&(a.mt||'')!==motFlt)return false;
+    return true;
+  });
+  inas.sort(function(a,b){return b.f.localeCompare(a.f)||a.w.localeCompare(b.w)});
+  // Resumen
+  var sum=document.getElementById('gInaSum');
+  if(sum){
+    var porMot={};inas.forEach(function(a){var k=naMotLabel(a.mt||'')||'Sin motivo';porMot[k]=(porMot[k]||0)+1;});
+    var chips='';for(var k in porMot)chips+='<span style="background:#fed7aa;color:#7c2d12;border-radius:12px;padding:2px 10px;font-size:11px;font-weight:600;margin-right:4px">'+k+': '+porMot[k]+'</span>';
+    sum.innerHTML='<div style="display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:6px"><b style="font-size:13px;color:#92400e">'+inas.length+' inasistencia'+(inas.length!==1?'s':'')+' en el período</b>'+chips+'</div>';
+  }
+  // Tabla
+  var adm=esAdmin();
+  var html='';
+  if(!inas.length){html='<tr><td colspan="6" style="text-align:center;color:#a0aec0;padding:16px">Sin inasistencias en el período seleccionado</td></tr>';}
+  inas.forEach(function(a){
+    var trb=TRB.find(function(t){return t.codigo===a.w});
+    var motLbl=naMotLabel(a.mt||'')||'<span style="color:#a0aec0">—</span>';
+    html+='<tr>';
+    html+='<td>'+a.f+'</td>';
+    html+='<td><b>'+(trb?trb.nombre:a.w)+'</b> <span style="color:#a0aec0;font-size:10px">'+a.w+'</span></td>';
+    html+='<td>'+(trb?trb.area:'—')+'</td>';
+    html+='<td><span style="background:#fed7aa;color:#7c2d12;border-radius:4px;padding:1px 8px;font-size:11px;font-weight:600">'+motLbl+'</span></td>';
+    html+='<td style="color:#718096;font-size:11px;font-style:italic">'+(a.obs||'<span style="color:#e2e8f0">—</span>')+'</td>';
+    html+='<td style="white-space:nowrap">';
+    if(adm){
+      html+='<button class="btn btn-i btn-sm" onclick="modalEditIna(\''+a.f+'\',\''+a.w+'\')" style="margin-right:3px">✏️ Editar</button>';
+      html+='<button class="btn btn-d btn-sm" onclick="eliminarIna(\''+a.f+'\',\''+a.w+'\')">🗑️</button>';
+    }
+    html+='</td></tr>';
+  });
+  document.getElementById('gInaTbl').innerHTML=html;
+}
+function modalEditIna(f,w){
+  if(!soloAdmin())return;
+  var a=asg.find(function(x){return x.f===f&&x.w===w&&x.na});
+  if(!a)return;
+  var trb=TRB.find(function(t){return t.codigo===w});
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>✏️ Editar Inasistencia</h2>';
+  mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px"><b>'+(trb?trb.nombre:w)+'</b> — '+f+'</p>';
+  mh+='<div class="fg"><label>Motivo</label><select id="eInaMot" style="font-size:12px"><option value="">Sin motivo</option>';
+  MOTIVOS_NA.forEach(function(m){mh+='<option value="'+m[0]+'"'+(a.mt===m[0]?' selected':'')+'>'+m[1]+'</option>';});
+  mh+='</select></div>';
+  mh+='<div class="fg"><label>Observación</label><textarea id="eInaObs" rows="3" style="width:100%;border:1.5px solid #e2e8f0;border-radius:6px;padding:6px;font-size:12px;resize:vertical;box-sizing:border-box">'+(a.obs||'')+'</textarea></div>';
+  mh+='<input type="hidden" id="eInaF" value="'+f+'"><input type="hidden" id="eInaW" value="'+w+'">';
+  mh+='<div style="display:flex;gap:6px;margin-top:12px"><button class="btn btn-s" onclick="doEditIna()">💾 Guardar</button><button class="btn btn-d" onclick="cerrarModal()">Cancelar</button></div>';
+  mh+='</div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+}
+function doEditIna(){
+  var f=document.getElementById('eInaF').value,w=document.getElementById('eInaW').value;
+  var a=asg.find(function(x){return x.f===f&&x.w===w&&x.na});if(!a)return;
+  a.mt=document.getElementById('eInaMot').value;
+  a.obs=document.getElementById('eInaObs').value.trim();
+  guardarLS();cerrarModal();renderGIna();
+  toast('✅ Inasistencia actualizada');
+}
+function eliminarIna(f,w){
+  if(!soloAdmin())return;
+  var trb=TRB.find(function(t){return t.codigo===w});
+  if(!confirm('Eliminar inasistencia de '+(trb?trb.nombre:w)+' del '+f+'?\nEsto la quitará del registro.'))return;
+  asg=asg.filter(function(x){return!(x.f===f&&x.w===w&&x.na)});
+  guardarLS();renderGIna();renderT1();stats();
+  toast('✅ Inasistencia eliminada');
+}
 // === PLAN DEL DIA ===
 function renderPlanDia(){
   var el=document.getElementById('rptFecha');if(!el)return;
@@ -2971,8 +3126,20 @@ function renderPlanDia(){
     html+='<table><thead><tr><th>Trabajador</th><th>Actividad</th><th>Módulos</th><th style="text-align:center">Horas</th><th style="text-align:center">Tipo</th></tr></thead><tbody>';
     grupos[area].forEach(function(t){
       totalTrb++;
+      var naEntry=asg.find(function(a){return a.f===fecha&&a.w===t.codigo&&a.na});
       var asigs=asg.filter(function(a){return a.f===fecha&&a.w===t.codigo&&!a.na});
-      if(asigs.length){
+      if(naEntry){
+        // Inasistencia registrada
+        var motLbl=naMotLabel(naEntry.mt||'')||'Sin motivo';
+        html+='<tr style="background:#fff7ed">';
+        html+='<td style="color:#92400e;font-weight:600">'+t.nombre+'</td>';
+        html+='<td colspan="3"><span style="background:#fed7aa;color:#7c2d12;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:700">⛔ INASISTENCIA</span>';
+        html+='<span style="color:#9a3412;font-size:11px;margin-left:6px">'+motLbl+'</span>';
+        if(naEntry.obs)html+='<span style="color:#b45309;font-size:10px;font-style:italic;margin-left:6px">'+naEntry.obs+'</span>';
+        html+='</td>';
+        html+='<td style="text-align:center;color:#9a3412">0h</td>';
+        html+='</tr>';
+      }else if(asigs.length){
         conAsig++;
         asigs.forEach(function(a,i){
           var actObj=ACT.find(function(x){return String(x.id)===String(a.act)});
@@ -2996,9 +3163,13 @@ function renderPlanDia(){
     });
     html+='</tbody></table></div>';
   }
+  // contar inasistencias del día
+  var conInas=0;
+  for(var area2 in grupos){grupos[area2].forEach(function(t){if(asg.find(function(a){return a.f===fecha&&a.w===t.codigo&&a.na}))conInas++;});}
   var resumen='<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">';
   resumen+='<div style="background:#ebf8ff;border-radius:8px;padding:8px 16px;font-size:12px;text-align:center"><b style="font-size:20px;color:#2b6cb0;display:block">'+totalTrb+'</b>Total</div>';
   resumen+='<div style="background:#f0fff4;border-radius:8px;padding:8px 16px;font-size:12px;text-align:center"><b style="font-size:20px;color:#276749;display:block">'+conAsig+'</b>Asignados</div>';
+  resumen+='<div style="background:#fff7ed;border-radius:8px;padding:8px 16px;font-size:12px;text-align:center"><b style="font-size:20px;color:#92400e;display:block">'+conInas+'</b>Inasistencias</div>';
   resumen+='<div style="background:#fff5f5;border-radius:8px;padding:8px 16px;font-size:12px;text-align:center"><b style="font-size:20px;color:#c53030;display:block">'+sinAsig+'</b>Sin asignar</div>';
   resumen+='</div>';
   body.innerHTML=resumen+(html||'<p style="color:#a0aec0;font-size:12px">No hay trabajadores para mostrar.</p>');
