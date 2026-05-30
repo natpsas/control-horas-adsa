@@ -202,12 +202,29 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div id="t4" class="tc">
 <!-- Sub-pestañas de Reportes -->
 <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid #e2e8f0">
-  <button id="st4_plan_btn" onclick="swSubT4('plan')" style="background:#fff;border:2px solid #e2e8f0;border-bottom:2px solid #fff;color:#2b6cb0;font-weight:700;padding:9px 22px;border-radius:8px 8px 0 0;margin-bottom:-2px;cursor:pointer;font-size:13px">📋 Plan del Día</button>
-  <button id="st4_consol_btn" onclick="swSubT4('consol')" style="background:#f7fafc;border:2px solid transparent;border-bottom:none;color:#718096;padding:9px 22px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px">📊 Consolidado</button>
+  <button id="st4_consol_btn" onclick="swSubT4('consol')" style="background:#fff;border:2px solid #e2e8f0;border-bottom:2px solid #fff;color:#2b6cb0;font-weight:700;padding:9px 22px;border-radius:8px 8px 0 0;margin-bottom:-2px;cursor:pointer;font-size:13px">📊 Consolidado</button>
+  <button id="st4_trb_btn" onclick="swSubT4('trb')" style="background:#f7fafc;border:2px solid transparent;border-bottom:none;color:#718096;padding:9px 22px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px">👤 Consulta Trabajador</button>
+  <button id="st4_plan_btn" onclick="swSubT4('plan')" style="background:#f7fafc;border:2px solid transparent;border-bottom:none;color:#718096;padding:9px 22px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px">📋 Asignaciones</button>
 </div>
 
-<!-- Panel: Plan del Día -->
-<div id="st4_plan_body">
+<!-- Panel: Consulta por Trabajador -->
+<div id="st4_trb_body" style="display:none">
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:14px">
+    <h2 style="margin:0">👤 Consulta por Trabajador</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <select id="rptTrbSel" onchange="renderRptTrb()" style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;min-width:180px"><option value="">— Seleccionar trabajador —</option></select>
+      <input type="date" id="rptTrbDesde" onchange="renderRptTrb()" style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">
+      <input type="date" id="rptTrbHasta" onchange="renderRptTrb()" style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">
+      <button class="btn btn-sm" style="background:#2b6cb0;color:#fff;font-size:11px" onclick="imprimirRptTrb()">🖨️ Imprimir</button>
+    </div>
+  </div>
+  <div id="rptTrbBody"><p style="color:#a0aec0;font-size:12px;padding:8px">Selecciona un trabajador y rango de fechas.</p></div>
+</div>
+</div>
+
+<!-- Panel: Asignaciones (Plan del Día) -->
+<div id="st4_plan_body" style="display:none">
 <div class="card" id="cardPlanDia">
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
     <h2 style="margin:0">📋 Plan del Día</h2>
@@ -222,7 +239,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 </div>
 
 <!-- Panel: Consolidado -->
-<div id="st4_consol_body" style="display:none">
+<div id="st4_consol_body">
 <div class="card">
   <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:10px">
     <h2 style="margin:0">📊 Consolidado</h2>
@@ -295,6 +312,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button class="btn btn-i" onclick="modalConexionPA()">⚙️ Configurar URLs de Power Automate</button>
 <button class="btn btn-s" onclick="spSincronizarManual()" style="margin-left:6px">🔄 Sincronizar ahora</button>
 <button class="btn btn-sm" onclick="migrarRegistrosSP()" style="margin-left:6px;background:#744210;color:#fff;border:none" title="Sube registros existentes sin ID a la lista ControlHoras_Registros">📤 Migrar registros a SP</button>
+<button class="btn btn-sm" onclick="repararHorasReg()" style="margin-left:6px;background:#553c9a;color:#fff;border:none" title="Alinea HAsig=HReg en todos los registros NORMAL con inconsistencia">🔧 Reparar HAsig→SP</button>
 <button class="btn btn-sm" onclick="subirTodoSP()" style="margin-left:6px;background:#276749;color:#fff;border:none" title="Sube TODOS los registros a ControlHoras_Registros (incluye los que ya tienen ID)">☁️ Subir todo a SP</button>
 <button class="btn btn-sm" onclick="diagnosticarSPReg()" style="margin-left:6px;background:#2b4c8c;color:#fff;border:none" title="Verifica que la lista ControlHoras_Registros esté bien configurada">🔍 Diagnosticar lista</button>
 </div>
@@ -1027,7 +1045,7 @@ async function spCargar(){
   var mapa={
     'asg':function(v){asg=v;localStorage.setItem('asg',JSON.stringify(v))},
     // 'reg' ya no se carga desde blob — ControlHoras_Registros es la fuente de verdad (spCargarRegistros)
-    'hue':function(v){hue=v;localStorage.setItem('hue',JSON.stringify(v))},
+    'hue':function(v){hue=Object.assign({},v,hue);localStorage.setItem('hue',JSON.stringify(hue))},
     'usr':function(v){usr=v;localStorage.setItem('usr',JSON.stringify(v))},
     // 'TRB' → ControlHoras_Trabajadores (lista dedicada, ver spCargarTRB)
     // 'ACT' → ControlHoras_Actividades  (lista dedicada, ver spCargarACT)
@@ -1084,12 +1102,11 @@ async function spGuardar(){
     }
     // reg — ya no se escribe al blob; ControlHoras_Registros es la fuente de verdad.
     // Los registros se sincronizan fila-por-fila vía spEscribirReg() al consolidar/aprobar.
-    // hue — solo escribe la fecha actual si hay datos locales para ese día
+    // hue — merge completo: SP base + todas las fechas locales (no solo fechaSel)
     var itHue=await spLeerItem('hue');
     var spHue=(itHue&&itHue.Valor)?JSON.parse(itHue.Valor):{};
-    if(hue[fechaSel]!==undefined&&Object.keys(hue[fechaSel]||{}).length>0){
-      var hueMerged=Object.assign({},spHue);
-      hueMerged[fechaSel]=hue[fechaSel];
+    if(Object.keys(hue).length>0){
+      var hueMerged=Object.assign({},spHue,hue); // local sobreescribe SP por fecha
       await spEscribirItem('hue',hueMerged);
     }
   }finally{SP_GUARDANDO=false}
@@ -1108,6 +1125,31 @@ function spSincronizarManual(){
       spEstado('☁️ Sincronizado '+new Date().toLocaleTimeString(),true);
     }).catch(function(e){alert('Error al sincronizar:\n'+e.message)});
   });
+}
+async function repararHorasReg(){
+  // Normaliza registros donde h (HAsig) ≠ hr (HReg) en tipo NORMAL
+  // Ocurre en registros consolidados con el cálculo proporcional anterior
+  var reparados=[];
+  reg.forEach(function(r){
+    if(r.tp==='NORMAL'&&r.h!==r.hr){
+      r.h=r.hr; // alinear HAsig = HReg
+      reparados.push(r);
+    }
+  });
+  if(!reparados.length){toast('✅ No hay registros con inconsistencia h≠hr','info');return;}
+  guardarLS();
+  toast('⏳ Reparando '+reparados.length+' registros en SP...','info',10000);
+  if(SP_READY){
+    var ok=0;
+    for(var i=0;i<reparados.length;i+=5){
+      await Promise.all(reparados.slice(i,i+5).map(function(r){
+        return spEscribirReg(r).then(function(){ok++;}).catch(function(e){console.warn('reparar:',e.message);});
+      }));
+    }
+    toast('✅ '+ok+'/'+reparados.length+' registros reparados en SP');
+  }else{
+    toast('✅ '+reparados.length+' registros reparados localmente (SP no conectado)');
+  }
 }
 
 function modalConexionPA(){
@@ -1168,29 +1210,146 @@ function stats(){
   var s3=document.getElementById('s3');
   if(s3)s3.textContent=sinMod;
 }
+function inicRptTrb(){
+  // Poblar selector de trabajadores si aún no tiene opciones
+  var sel=document.getElementById('rptTrbSel');if(!sel)return;
+  if(sel.options.length<=1){
+    var trbs=TRB.filter(function(t){return t.activo}).sort(function(a,b){return a.nombre.localeCompare(b.nombre)});
+    trbs.forEach(function(t){var o=document.createElement('option');o.value=t.codigo;o.textContent=t.nombre+' ('+t.area+')';sel.appendChild(o);});
+  }
+  // Defaults de fechas: mes actual
+  var dDesde=document.getElementById('rptTrbDesde');var dHasta=document.getElementById('rptTrbHasta');
+  if(dDesde&&!dDesde.value){var h=new Date();dDesde.value=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0')+'-01';}
+  if(dHasta&&!dHasta.value){var h2=new Date();dHasta.value=h2.getFullYear()+'-'+String(h2.getMonth()+1).padStart(2,'0')+'-'+String(h2.getDate()).padStart(2,'0');}
+  renderRptTrb();
+}
+function renderRptTrb(){
+  var body=document.getElementById('rptTrbBody');if(!body)return;
+  var cod=document.getElementById('rptTrbSel')?document.getElementById('rptTrbSel').value:'';
+  var desde=document.getElementById('rptTrbDesde')?document.getElementById('rptTrbDesde').value:'';
+  var hasta=document.getElementById('rptTrbHasta')?document.getElementById('rptTrbHasta').value:'';
+  if(!cod){body.innerHTML='<p style="color:#a0aec0;font-size:12px;padding:8px">Selecciona un trabajador.</p>';return;}
+  var trb=TRB.find(function(t){return t.codigo===cod});
+  // Registros consolidados del trabajador en el rango
+  var regsT=reg.filter(function(r){
+    return r.w===cod&&(!desde||r.f>=desde)&&(!hasta||r.f<=hasta);
+  }).sort(function(a,b){return a.f>b.f?1:a.f<b.f?-1:0});
+  // Asignaciones pendientes (sin consolidar) en el rango
+  var asgT=asg.filter(function(a){
+    return a.w===cod&&!a.na&&(!desde||a.f>=desde)&&(!hasta||a.f<=hasta)&&!reg.some(function(r){return r.w===cod&&r.f===a.f});
+  }).sort(function(a,b){return a.f>b.f?1:a.f<b.f?-1:0});
+  // Inasistencias en el rango
+  var inasT=asg.filter(function(a){
+    return a.w===cod&&a.na&&(!desde||a.f>=desde)&&(!hasta||a.f<=hasta);
+  }).sort(function(a,b){return a.f>b.f?1:a.f<b.f?-1:0});
+  // Totales
+  var totNorm=0,totExt=0,totReg=regsT.length;
+  regsT.forEach(function(r){if(r.tp==='EXTRAS')totExt+=r.hr||0;else totNorm+=r.hr||0;});
+  var h='';
+  // Resumen
+  h+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">';
+  h+='<div style="background:#ebf8ff;border:1.5px solid #93c5fd;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#2b6cb0">'+totReg+'</div><div style="font-size:11px;color:#4a5568">Registros</div></div>';
+  h+='<div style="background:#f0fff4;border:1.5px solid #68d391;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#276749">'+totNorm.toFixed(1)+'h</div><div style="font-size:11px;color:#4a5568">Normal</div></div>';
+  h+='<div style="background:#fffbeb;border:1.5px solid #f6ad55;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#92400e">'+totExt.toFixed(1)+'h</div><div style="font-size:11px;color:#4a5568">Extras</div></div>';
+  h+='<div style="background:#faf5ff;border:1.5px solid #b794f4;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#553c9a">'+(totNorm+totExt).toFixed(1)+'h</div><div style="font-size:11px;color:#4a5568">Total</div></div>';
+  h+='<div style="background:#fff5f5;border:1.5px solid #fc8181;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#9b2c2c">'+inasT.length+'</div><div style="font-size:11px;color:#4a5568">Inasistencias</div></div>';
+  h+='</div>';
+  if(!regsT.length&&!asgT.length&&!inasT.length){h+='<p style="color:#a0aec0;font-size:12px;padding:8px">Sin datos para el rango seleccionado.</p>';body.innerHTML=h;return;}
+  // Tabla de registros consolidados
+  if(regsT.length){
+    h+='<h3 style="font-size:13px;color:#2d3748;margin:12px 0 6px">📋 Registros consolidados</h3>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+    h+='<thead><tr style="background:#edf2f7">';
+    h+='<th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Fecha</th>';
+    h+='<th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Actividad</th>';
+    h+='<th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Categoría</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #e2e8f0">Tipo</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #e2e8f0">H.Asig</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #e2e8f0">H.Reg</th>';
+    h+='<th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Módulos</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #e2e8f0">Rendimiento</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #e2e8f0">Estado</th>';
+    h+='</tr></thead><tbody>';
+    var prevF='';
+    regsT.forEach(function(r){
+      var rowBg=r.f!==prevF?'background:#f7fafc':'';prevF=r.f;
+      var stColor=r.st==='aprobado'?'color:#276749;background:#c6f6d5':r.st==='rechazado'?'color:#9b2c2c;background:#fff5f5':'color:#92400e;background:#fef3c7';
+      var tpColor=r.tp==='EXTRAS'?'color:#92400e;background:#fef3c7;font-weight:700':'color:#276749;background:#f0fff4';
+      var rend=r.rend!=null&&r.rend>0?(r.rend+' '+(r.ind||'')):'-';
+      h+='<tr style="'+rowBg+';border-bottom:1px solid #e2e8f0">';
+      h+='<td style="padding:6px 10px;white-space:nowrap">'+r.f+'</td>';
+      h+='<td style="padding:6px 10px">'+(r.sub||r.act||'-')+'</td>';
+      h+='<td style="padding:6px 10px;color:#718096">'+(r.cat||'-')+'</td>';
+      h+='<td style="padding:6px 10px;text-align:center"><span style="font-size:10px;padding:2px 7px;border-radius:4px;'+tpColor+'">'+r.tp+'</span></td>';
+      h+='<td style="padding:6px 10px;text-align:center;font-weight:600">'+((r.h||0).toFixed(1))+'h</td>';
+      h+='<td style="padding:6px 10px;text-align:center;font-weight:700;color:#2b6cb0">'+((r.hr||0).toFixed(1))+'h</td>';
+      h+='<td style="padding:6px 10px;font-size:11px;color:#4a5568">'+((r.mods||[]).join(', ')||'-')+'</td>';
+      h+='<td style="padding:6px 10px;text-align:center">'+rend+'</td>';
+      h+='<td style="padding:6px 10px;text-align:center"><span style="font-size:10px;padding:2px 7px;border-radius:4px;'+stColor+'">'+r.st.toUpperCase()+'</span></td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  // Asignaciones pendientes
+  if(asgT.length){
+    h+='<h3 style="font-size:13px;color:#2d3748;margin:16px 0 6px">⏳ Asignaciones pendientes (sin consolidar)</h3>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+    h+='<thead><tr style="background:#edf2f7"><th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Fecha</th><th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Actividad</th><th style="padding:7px 10px;text-align:center;border-bottom:2px solid #e2e8f0">H.Asig</th><th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Módulos</th></tr></thead><tbody>';
+    asgT.forEach(function(a){
+      var act=ACT.find(function(x){return String(x.id)===String(a.act)});
+      h+='<tr style="border-bottom:1px solid #e2e8f0"><td style="padding:6px 10px;white-space:nowrap">'+a.f+'</td>';
+      h+='<td style="padding:6px 10px">'+(act?actDesc(act):a.act||'-')+'</td>';
+      h+='<td style="padding:6px 10px;text-align:center;font-weight:600">'+((a.h||0).toFixed(1))+'h</td>';
+      h+='<td style="padding:6px 10px;font-size:11px;color:#4a5568">'+((a.mods||[]).join(', ')||'-')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  // Inasistencias
+  if(inasT.length){
+    h+='<h3 style="font-size:13px;color:#2d3748;margin:16px 0 6px">⛔ Inasistencias</h3>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+    h+='<thead><tr style="background:#edf2f7"><th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Fecha</th><th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Motivo</th><th style="padding:7px 10px;text-align:left;border-bottom:2px solid #e2e8f0">Observación</th></tr></thead><tbody>';
+    inasT.forEach(function(a){
+      h+='<tr style="border-bottom:1px solid #e2e8f0;background:#fff7ed"><td style="padding:6px 10px;white-space:nowrap">'+a.f+'</td>';
+      h+='<td style="padding:6px 10px">'+naMotLabel(a.mt||'')+'</td>';
+      h+='<td style="padding:6px 10px;color:#718096">'+(a.obs||'-')+'</td></tr>';
+    });
+    h+='</tbody></table></div>';
+  }
+  body.innerHTML=h;
+}
+function imprimirRptTrb(){
+  var cod=document.getElementById('rptTrbSel')?document.getElementById('rptTrbSel').value:'';
+  var desde=document.getElementById('rptTrbDesde')?document.getElementById('rptTrbDesde').value:'';
+  var hasta=document.getElementById('rptTrbHasta')?document.getElementById('rptTrbHasta').value:'';
+  var trb=TRB.find(function(t){return t.codigo===cod});
+  var titulo=(trb?trb.nombre+' — ':'')+' Reporte '+(desde||'')+(hasta?' al '+hasta:'');
+  var contenido=document.getElementById('rptTrbBody')?document.getElementById('rptTrbBody').innerHTML:'';
+  var w=window.open('','_blank','width=900,height=700');
+  w.document.write('<!DOCTYPE html><html><head><meta charset="utf-8"><title>'+titulo+'</title>');
+  w.document.write('<style>body{font-family:Arial,sans-serif;font-size:12px;margin:20px}table{width:100%;border-collapse:collapse}th,td{padding:6px 8px;border:1px solid #e2e8f0;text-align:left}th{background:#edf2f7}h3{margin:14px 0 6px}@media print{button{display:none}}</style></head><body>');
+  w.document.write('<h2>'+titulo+'</h2>'+contenido+'</body></html>');
+  w.document.close();w.focus();setTimeout(function(){w.print();},400);
+}
 function swSubT4(id){
-  var planBody=document.getElementById('st4_plan_body');
-  var consolBody=document.getElementById('st4_consol_body');
-  var planBtn=document.getElementById('st4_plan_btn');
-  var consolBtn=document.getElementById('st4_consol_btn');
-  if(!planBody||!consolBody)return;
+  var panels={consol:'st4_consol_body',trb:'st4_trb_body',plan:'st4_plan_body'};
+  var btns={consol:'st4_consol_btn',trb:'st4_trb_btn',plan:'st4_plan_btn'};
   var actSt='background:#fff;border:2px solid #e2e8f0;border-bottom:2px solid #fff;color:#2b6cb0;font-weight:700;padding:9px 22px;border-radius:8px 8px 0 0;margin-bottom:-2px;cursor:pointer;font-size:13px';
   var inactSt='background:#f7fafc;border:2px solid transparent;border-bottom:none;color:#718096;padding:9px 22px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px';
-  if(id==='plan'){
-    planBody.style.display='';consolBody.style.display='none';
-    planBtn.style.cssText=actSt;consolBtn.style.cssText=inactSt;
-    renderPlanDia();
-  }else{
-    planBody.style.display='none';consolBody.style.display='';
-    consolBtn.style.cssText=actSt;planBtn.style.cssText=inactSt;
-    renderT4();setRangoExp('todo');updExpInfo();
+  for(var k in panels){
+    var pb=document.getElementById(panels[k]);var bb=document.getElementById(btns[k]);
+    if(pb)pb.style.display=k===id?'':'none';
+    if(bb)bb.style.cssText=k===id?actSt:inactSt;
   }
+  if(id==='consol'){renderT4();setRangoExp('todo');updExpInfo();}
+  if(id==='trb'){inicRptTrb();}
+  if(id==='plan'){renderPlanDia();}
 }
 function swTab(id,btn){
   document.querySelectorAll('.tc').forEach(function(t){t.classList.remove('active')});
   document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active')});
   document.getElementById(id).classList.add('active');btn.classList.add('active');
-  if(id==='t2')renderT2();if(id==='t3')renderT3();if(id==='t4'){swSubT4('plan');}if(id==='t5')renderGestion();
+  if(id==='t2')renderT2();if(id==='t3')renderT3();if(id==='t4'){swSubT4('consol');}if(id==='t5')renderGestion();
 }
 function poblarFiltros(){
   var areas=[],unis=[];
@@ -1817,7 +1976,7 @@ function renderT2(){
       h+='</div></div>'});
     h+='<div class="fr" style="margin-top:7px"><div class="fg"><label>Horas totales (m\u00e1x: '+maxN+'h)</label>'+hInput('ht_'+cod,totalH,16,null)+'</div>';
     h+='<div class="fg"><label>Referencia <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="ref_'+cod+'" placeholder="Ej: OP-001, Lote A..."></div>';
-    h+='<div class="fg"><label>Obs. <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="obs_'+cod+'" placeholder="Opcional"></div>';
+    h+='<div class="fg"><label>Obs. <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="cobs_'+cod+'" placeholder="Opcional"></div>';
     h+='<div class="fg" style="display:flex;align-items:flex-end"><button class="btn btn-s" onclick="consolidar(\''+cod+'\')">Confirmar</button></div></div>';
     h+='<button class="add-btn" onclick="addAct(\''+cod+'\')">Ajustar: + actividad</button></div>'});c.innerHTML=h;
 }
@@ -1869,7 +2028,7 @@ function desconsolidar(cod){
 function consolidar(cod){
   var d=fechaSel;var yaC=reg.filter(function(r){return r.w===cod&&r.f===d});if(yaC.length>0){alert('Ya consolidado. Usa Editar.');return}
   if(!document.getElementById('ht_'+cod+'_h')){alert('Error');return}var hrs=getHoras('ht_'+cod);if(hrs<=0){alert('Horas > 0');return}
-  var obsEl=document.getElementById('obs_'+cod);var obs=obsEl?obsEl.value:'';
+  var obsEl=document.getElementById('cobs_'+cod);var obs=obsEl?obsEl.value:'';
   var refEl=document.getElementById('ref_'+cod);var ref=refEl?refEl.value.trim():'';
   var acts2=asg.filter(function(a){return a.w===cod&&a.f===d&&!a.na});if(acts2.length===0){alert('Sin actividades');return}
   var hu=(hue[d]||{})[cod];var trb=TRB.find(function(t){return t.codigo===cod});var fechaObj=new Date(d+'T12:00:00');var diaSem=fechaObj.getDay();
@@ -1898,8 +2057,9 @@ function consolidar(cod){
     var tp=diaSem===0?'EXTRAS':(a.x?'EXTRAS':'NORMAL');
     // Para la actividad con más horas: NORMAL = sus horas menos el exceso
     var hrReg=(actMax&&a===actMax)?Math.max(0,a.h-hExt):a.h;
+    // h y hr deben ser iguales para consistencia en exportación
     reg.push({id:genRegId(),f:d,w:cod,n:trb.nombre,ar:trb.area,act:a.act,uni:a.uni,cat:act?act.categoria:'',sub:act?act.subcategoria:'',
-      h:a.h,hr:hrReg,rend:a.rend||null,ind:act?act.indicador:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
+      h:hrReg,hr:hrReg,rend:a.rend||null,ind:act?act.indicador:'',hhu:hu?hu.h:null,ehu:hu?hu.e:null,shu:hu?hu.s:null,
       mods:a.mods||[],obs:obs,ref:ref,tp:tp,st:'pendiente',excede:excedeH,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''});});
   // Registro EXTRAS para el exceso de jornada, asociado a la actividad con más horas
   if(actMax){
