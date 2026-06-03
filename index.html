@@ -3077,52 +3077,74 @@ function modalAsignacionMasiva(){
     if(!areas[t.area])areas[t.area]=[];
     areas[t.area].push(t);
   });
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:680px">';
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:860px;width:98%;max-height:92vh">';
   mh+='<h2>👥 Asignación Masiva</h2>';
   mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">Asigna la misma actividad y módulos a varios trabajadores a la vez.</p>';
   // Fecha
   mh+='<div class="fg"><label>Fecha</label><input type="date" id="amFecha" value="'+fechaSel+'"></div>';
-  // Trabajadores
-  mh+='<div class="fg"><label>Trabajadores';
-  mh+=' <select id="amAreaFlt" onchange="amFiltrarArea()" style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid #cbd5e0;margin-left:6px;color:#4a5568"><option value="">Todas las áreas</option>';
+  // Layout de 2 columnas: Trabajadores | Actividad + config
+  mh+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">';
+
+  // ---- Columna izquierda: Trabajadores ----
+  mh+='<div>';
+  mh+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:5px">';
+  mh+='<label style="font-weight:600;font-size:12px;margin:0">Trabajadores</label>';
+  mh+='<select id="amAreaFlt" onchange="amFiltrarArea()" style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid #cbd5e0;color:#4a5568"><option value="">Todas las áreas</option>';
   for(var area in areas){mh+='<option value="'+area+'">'+area+'</option>';}
   mh+='</select>';
-  mh+=' <button type="button" class="btn btn-sm" style="background:#ebf8ff;color:#2b6cb0;font-size:10px" onclick="amSelAll()">Todos</button>';
-  mh+=' <button type="button" class="btn btn-sm" style="background:#fff5f5;color:#c53030;font-size:10px" onclick="amDeselAll()">Ninguno</button>';
-  mh+='</label>';
-  mh+='<div style="max-height:180px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:6px;padding:8px;background:#fafafa">';
+  mh+='<button type="button" class="btn btn-sm" style="background:#ebf8ff;color:#2b6cb0;font-size:10px;padding:2px 7px" onclick="amSelAll()">Todos</button>';
+  mh+='<button type="button" class="btn btn-sm" style="background:#fff5f5;color:#c53030;font-size:10px;padding:2px 7px" onclick="amDeselAll()">Ninguno</button>';
+  mh+='</div>';
+  mh+='<input type="text" id="amBusqTrb" placeholder="🔍 Buscar trabajador..." oninput="amBuscarTrb()" style="width:100%;padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;margin-bottom:5px;box-sizing:border-box">';
+  mh+='<div style="height:340px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:6px;padding:8px;background:#fafafa">';
   for(var area in areas){
     mh+='<div class="am-area-grp" data-area="'+area+'">';
-    mh+='<div style="font-size:10px;font-weight:700;color:#667eea;background:#eff6ff;padding:3px 6px;border-radius:4px;margin:6px 0 3px">'+area+'</div>';
+    mh+='<div style="font-size:10px;font-weight:700;color:#667eea;background:#eff6ff;padding:3px 6px;border-radius:4px;margin:6px 0 3px;position:sticky;top:0">'+area+'</div>';
     areas[area].forEach(function(t){
       var yaAsig=asg.some(function(a){return a.f===fechaSel&&a.w===t.codigo&&!a.na});
       mh+='<div class="cbi"><input type="checkbox" class="am-trb" value="'+t.codigo+'">';
-      mh+='<label style="'+(yaAsig?'color:#276749;font-weight:600':'')+'">';
+      mh+='<label style="font-size:12px;'+(yaAsig?'color:#276749;font-weight:600':'')+'">';
       mh+=t.nombre+(yaAsig?' ✓':'')+'</label></div>';
     });
     mh+='</div>';
   }
-  mh+='</div></div>';
-  // Actividad
-  mh+='<div class="fg"><label>Actividad</label><select id="amAct" onchange="amCambioAct()" style="font-size:12px">';
+  mh+='</div>';
+  mh+='</div>';
+
+  // ---- Columna derecha: Actividad + config ----
+  mh+='<div style="display:flex;flex-direction:column;gap:10px">';
+  mh+='<div>';
+  mh+='<label style="font-weight:600;font-size:12px;display:block;margin-bottom:5px">Actividad</label>';
+  mh+='<input type="text" id="amBusqAct" placeholder="🔍 Buscar actividad..." oninput="amBuscarAct()" style="width:100%;padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;margin-bottom:4px;box-sizing:border-box">';
+  mh+='<select id="amAct" onchange="amCambioAct()" size="8" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
   mh+='<option value="">-- Selecciona actividad --</option>';
   var lastUni='';
   ACT.filter(function(a){return a.activo}).forEach(function(a){
     if(a.unidad!==lastUni){mh+='<optgroup label="'+a.unidad+'">';lastUni=a.unidad;}
     mh+='<option value="'+a.id+'">'+a.subcategoria+'</option>';
   });
-  mh+='</select></div>';
-  // Horas y tipo
-  mh+='<div class="grid-2">';
-  mh+='<div class="fg"><label>Horas por trabajador</label><input type="number" id="amH" value="8" min="0.5" max="24" step="0.5"></div>';
-  mh+='<div class="fg"><label>Tipo</label><select id="amTipo"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
+  mh+='</select>';
   mh+='</div>';
+
+  // Horas y tipo
+  mh+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+  mh+='<div class="fg" style="margin:0"><label>Horas por trabajador</label><input type="number" id="amH" value="8" min="0.5" max="24" step="0.5"></div>';
+  mh+='<div class="fg" style="margin:0"><label>Tipo</label><select id="amTipo"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
+  mh+='</div>';
+
   // Módulos
-  mh+='<div class="fg"><label>Módulos';
+  mh+='<div class="fg" style="margin:0"><label>Módulos';
   mh+=' <button type="button" class="btn btn-sm" style="background:#edf2f7;font-size:10px" onclick="amSelAllMods()">Sel. todos</button>';
   mh+=' <button type="button" class="btn btn-sm" style="background:#fff5f5;color:#c53030;font-size:10px" onclick="amDeselMods()">Ninguno</button>';
   mh+='</label>';
   mh+='<div class="modbox" id="amMods"><p style="font-size:11px;color:#a0aec0">Selecciona una actividad para ver módulos</p></div>';
+  mh+='</div>';
+  mh+='</div>'; // fin columna derecha
+  mh+='</div>'; // fin grid
+  // Horas y tipo
+  mh+='<div class="grid-2">';
+  mh+='<div class="fg"><label>Horas por trabajador</label><input type="number" id="amH" value="8" min="0.5" max="24" step="0.5"></div>';
+  mh+='<div class="fg"><label>Tipo</label><select id="amTipo"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
   mh+='</div>';
   mh+='<div style="display:flex;gap:6px;margin-top:14px">';
   mh+='<button class="btn btn-s" onclick="doAsignacionMasiva()">✅ Crear asignaciones</button>';
@@ -3132,11 +3154,38 @@ function modalAsignacionMasiva(){
 }
 function amSelAll(){document.querySelectorAll('.am-trb').forEach(function(c){c.checked=true});}
 function amDeselAll(){document.querySelectorAll('.am-trb').forEach(function(c){c.checked=false});}
-function amFiltrarArea(){
-  var sel=document.getElementById('amAreaFlt').value;
-  document.querySelectorAll('.am-area-grp').forEach(function(g){
-    g.style.display=(!sel||g.dataset.area===sel)?'':'none';
+function amBuscarTrb(){
+  var q=(document.getElementById('amBusqTrb').value||'').toLowerCase();
+  document.querySelectorAll('.am-area-grp').forEach(function(grp){
+    var vis=0;
+    grp.querySelectorAll('.cbi').forEach(function(cbi){
+      var lbl=cbi.querySelector('label');
+      var match=!q||(lbl&&lbl.textContent.toLowerCase().indexOf(q)>=0);
+      cbi.style.display=match?'':'none';
+      if(match)vis++;
+    });
+    // Ocultar grupo entero si ningún trabajador coincide (respetando filtro de área)
+    var areaFlt=document.getElementById('amAreaFlt')?document.getElementById('amAreaFlt').value:'';
+    var areaOk=!areaFlt||grp.dataset.area===areaFlt;
+    grp.style.display=(vis>0&&areaOk)?'':'none';
   });
+}
+function amBuscarAct(){
+  var q=(document.getElementById('amBusqAct').value||'').toLowerCase();
+  var sel=document.getElementById('amAct');
+  var prev=sel.value;
+  sel.innerHTML='<option value="">-- Selecciona actividad --</option>';
+  var lastUni='';
+  ACT.filter(function(a){return a.activo}).forEach(function(a){
+    var match=!q||(a.subcategoria&&a.subcategoria.toLowerCase().indexOf(q)>=0)||(a.categoria&&a.categoria.toLowerCase().indexOf(q)>=0)||(a.unidad&&a.unidad.toLowerCase().indexOf(q)>=0);
+    if(!match)return;
+    if(a.unidad!==lastUni){sel.innerHTML+='<optgroup label="'+a.unidad+'">';lastUni=a.unidad;}
+    sel.innerHTML+='<option value="'+a.id+'"'+(a.id==prev?' selected':'')+'>'+a.subcategoria+'</option>';
+  });
+}
+function amFiltrarArea(){
+  // Delegar en amBuscarTrb que ya combina área + texto
+  amBuscarTrb();
 }
 function amSelAllMods(){
   var cbs=document.querySelectorAll('#amMods input[type=checkbox]');
