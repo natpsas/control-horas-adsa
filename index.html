@@ -1242,16 +1242,24 @@ function renderRptTrb(){
   var inasT=asg.filter(function(a){
     return a.w===cod&&a.na&&(!desde||a.f>=desde)&&(!hasta||a.f<=hasta);
   }).sort(function(a,b){return a.f>b.f?1:a.f<b.f?-1:0});
-  // Totales
-  var totNorm=0,totExt=0,totReg=regsT.length;
+  // Totales y huella
+  var totNorm=0,totExt=0,totReg=regsT.length,totHue=0,diasHue=0;
   regsT.forEach(function(r){if(r.tp==='EXTRAS')totExt+=r.hr||0;else totNorm+=r.hr||0;});
+  // Recopilar registros de huella en el rango
+  var hueT=[];
+  Object.keys(hue).sort().forEach(function(fecha){
+    if((!desde||fecha>=desde)&&(!hasta||fecha<=hasta)){
+      var dh=hue[fecha];if(dh&&dh[cod]){hueT.push({f:fecha,data:dh[cod]});totHue+=dh[cod].h||0;diasHue++;}
+    }
+  });
   var h='';
   // Resumen
   h+='<div style="display:flex;flex-wrap:wrap;gap:10px;margin-bottom:16px">';
   h+='<div style="background:#ebf8ff;border:1.5px solid #93c5fd;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#2b6cb0">'+totReg+'</div><div style="font-size:11px;color:#4a5568">Registros</div></div>';
   h+='<div style="background:#f0fff4;border:1.5px solid #68d391;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#276749">'+totNorm.toFixed(1)+'h</div><div style="font-size:11px;color:#4a5568">Normal</div></div>';
   h+='<div style="background:#fffbeb;border:1.5px solid #f6ad55;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#92400e">'+totExt.toFixed(1)+'h</div><div style="font-size:11px;color:#4a5568">Extras</div></div>';
-  h+='<div style="background:#faf5ff;border:1.5px solid #b794f4;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#553c9a">'+(totNorm+totExt).toFixed(1)+'h</div><div style="font-size:11px;color:#4a5568">Total</div></div>';
+  h+='<div style="background:#faf5ff;border:1.5px solid #b794f4;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#553c9a">'+(totNorm+totExt).toFixed(1)+'h</div><div style="font-size:11px;color:#4a5568">Total Reg.</div></div>';
+  h+='<div style="background:#e8f4fd;border:1.5px solid #63b3ed;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#2b6cb0">'+totHue.toFixed(1)+'h</div><div style="font-size:11px;color:#4a5568">Total Huella</div></div>';
   h+='<div style="background:#fff5f5;border:1.5px solid #fc8181;border-radius:8px;padding:10px 18px;text-align:center"><div style="font-size:22px;font-weight:700;color:#9b2c2c">'+inasT.length+'</div><div style="font-size:11px;color:#4a5568">Inasistencias</div></div>';
   h+='</div>';
   if(!regsT.length&&!asgT.length&&!inasT.length){h+='<p style="color:#a0aec0;font-size:12px;padding:8px">Sin datos para el rango seleccionado.</p>';body.innerHTML=h;return;}
@@ -1303,6 +1311,37 @@ function renderRptTrb(){
       h+='<td style="padding:6px 10px;font-size:11px;color:#4a5568">'+((a.mods||[]).join(', ')||'-')+'</td></tr>';
     });
     h+='</tbody></table></div>';
+  }
+  // Huella (horas en finca)
+  if(hueT.length){
+    h+='<h3 style="font-size:13px;color:#2d3748;margin:16px 0 6px">🕐 Huellero — Horas en finca ('+diasHue+' días · '+totHue.toFixed(1)+'h total)</h3>';
+    h+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+    h+='<thead><tr style="background:#e8f4fd">';
+    h+='<th style="padding:7px 10px;text-align:left;border-bottom:2px solid #bee3f8">Fecha</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #bee3f8">Entrada</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #bee3f8">Salida</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #bee3f8">H. en Finca</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #bee3f8">H. Registradas</th>';
+    h+='<th style="padding:7px 10px;text-align:center;border-bottom:2px solid #bee3f8">Diferencia</th>';
+    h+='<th style="padding:7px 10px;text-align:left;border-bottom:2px solid #bee3f8">Marcaciones</th>';
+    h+='</tr></thead><tbody>';
+    hueT.forEach(function(item){
+      var hReg=0;regsT.filter(function(r){return r.f===item.f}).forEach(function(r){hReg+=r.hr||0;});
+      var diff=item.data.h-hReg;
+      var diffCol=diff>0?'color:#c53030':'color:#276749';
+      h+='<tr style="border-bottom:1px solid #bee3f8">';
+      h+='<td style="padding:6px 10px;white-space:nowrap">'+item.f+'</td>';
+      h+='<td style="padding:6px 10px;text-align:center;font-weight:600">'+item.data.e+'</td>';
+      h+='<td style="padding:6px 10px;text-align:center;font-weight:600">'+item.data.s+'</td>';
+      h+='<td style="padding:6px 10px;text-align:center;font-weight:700;color:#2b6cb0">'+item.data.h.toFixed(2)+'h</td>';
+      h+='<td style="padding:6px 10px;text-align:center;font-weight:600">'+hReg.toFixed(1)+'h</td>';
+      h+='<td style="padding:6px 10px;text-align:center;font-weight:600;'+diffCol+'">'+(diff>0?'+':'')+diff.toFixed(2)+'h</td>';
+      h+='<td style="padding:6px 10px;font-size:10px;color:#718096">'+item.data.all+'</td>';
+      h+='</tr>';
+    });
+    h+='</tbody></table></div>';
+  }else{
+    h+='<p style="font-size:12px;color:#a0aec0;margin:12px 0">🕐 Sin datos de huellero para este trabajador en el rango.</p>';
   }
   // Inasistencias
   if(inasT.length){
@@ -1781,40 +1820,64 @@ function procH(txt){
   if(lines.length<2){document.getElementById('hSum').innerHTML='<div class="alert al-e">Archivo vac\u00edo</div>';return}
   // Mostrar primeras lineas para debug
   var debugLines=[];for(var d=0;d<Math.min(3,lines.length);d++)debugLines.push(lines[d].substring(0,120));
+  // Set de c\u00f3digos TRB activos para detecci\u00f3n flexible
+  var trbSet={};TRB.forEach(function(t){if(t.activo)trbSet[t.codigo]=1;});
+  var trbCodes=Object.keys(trbSet);
   // Detectar separador
   var header=lines[0]||'';var sep=',';
   var tabs=0,comas=0,puntoycomas=0;
   for(var ci=0;ci<header.length;ci++){if(header[ci]==='\t')tabs++;if(header[ci]===',')comas++;if(header[ci]===';')puntoycomas++}
   if(tabs>comas&&tabs>puntoycomas)sep='\t';
   else if(puntoycomas>comas)sep=';';
-  // Detectar columnas por contenido de primera fila de datos
-  var firstRow=lines[1]?lines[1].split(sep):[];
+  // Detectar columnas escaneando varias filas de datos
   var colCod=-1,colFecha=-1;
-  // Buscar en datos: codigo tiene formato E000XXX o P0001, fecha tiene / o - y espacio
-  for(var c=0;c<firstRow.length;c++){
-    var val=firstRow[c].trim().replace(/"/g,'');
-    if(colCod<0&&/^[EP]\d{3,6}$/.test(val))colCod=c;
-    if(colFecha<0&&/\d{4}[\/-]\d{2}[\/-]\d{2}\s\d{2}:/.test(val))colFecha=c;
-    if(colFecha<0&&/\d{2}[\/-]\d{2}[\/-]\d{4}\s\d{2}:/.test(val))colFecha=c;
+  var sampleRows=[];for(var si=1;si<=Math.min(10,lines.length-1);si++){var sl=lines[si].trim();if(sl)sampleRows.push(sl.split(sep));}
+  // 1\u00aa pasada: buscar columna de c\u00f3digo contra TRB real
+  if(trbCodes.length>0){
+    sampleRows.forEach(function(row){
+      row.forEach(function(cell,ci2){
+        var v=cell.trim().replace(/"/g,'');
+        if(colCod<0&&trbSet[v])colCod=ci2;
+      });
+    });
   }
-  // Fallback: buscar en header
+  // 2\u00aa pasada: regex E/P como fallback
+  if(colCod<0){
+    sampleRows.forEach(function(row){
+      row.forEach(function(cell,ci2){
+        var v=cell.trim().replace(/"/g,'');
+        if(colCod<0&&/^[EP]\d{2,}/.test(v))colCod=ci2;
+      });
+    });
+  }
+  // Buscar columna de fecha/hora
+  sampleRows.forEach(function(row){
+    row.forEach(function(cell,ci2){
+      var v=cell.trim().replace(/"/g,'');
+      if(colFecha<0&&(/\d{4}[\/-]\d{2}[\/-]\d{2}\s\d{2}:/.test(v)||/\d{2}[\/-]\d{2}[\/-]\d{4}\s\d{2}:/.test(v)))colFecha=ci2;
+    });
+  });
+  // Fallback por nombre de columna en header
   if(colCod<0||colFecha<0){
     var cols=header.split(sep);
     for(var c2=0;c2<cols.length;c2++){
       var cv=cols[c2].toLowerCase().replace(/"/g,'').trim();
-      if(colCod<0&&(cv.indexOf('reg')>=0&&cv.indexOf('no')>=0))colCod=c2;
-      if(colFecha<0&&(cv.indexOf('dia')>=0||cv.indexOf('fecha')>=0||cv.indexOf('date')>=0))colFecha=c2;
+      if(colCod<0&&(cv.indexOf('reg')>=0||cv.indexOf('cod')>=0||cv.indexOf('emp')>=0||cv.indexOf('id')>=0))colCod=c2;
+      if(colFecha<0&&(cv.indexOf('dia')>=0||cv.indexOf('fecha')>=0||cv.indexOf('date')>=0||cv.indexOf('hora')>=0||cv.indexOf('time')>=0))colFecha=c2;
     }
   }
   if(colCod<0)colCod=0;if(colFecha<0)colFecha=4;
-  // Procesar
+  // Procesar registros
   for(var i=1;i<lines.length;i++){
     var l=lines[i].trim();if(!l)continue;parsed++;
     var p=l.split(sep);if(p.length<=Math.max(colCod,colFecha)){skipped++;continue}
     var cod=p[colCod].trim().replace(/"/g,'');
     var fh=p[colFecha].trim().replace(/"/g,'');
-    if(!cod||!fh||fh.indexOf(' ')<0){skipped++;continue}
-    if(!/^[EP]\d/.test(cod)){skipped++;continue}
+    if(!cod||!fh){skipped++;continue}
+    // Aceptar el c\u00f3digo si existe en TRB o si tiene formato E/P + d\u00edgitos
+    var codOk=trbSet[cod]||/^[EP]\d/.test(cod);
+    if(!codOk){skipped++;continue}
+    // Separar fecha y hora (puede venir junto "2026-05-22 07:30" o solo la fecha)
     var parts=fh.split(' ');var datePart=parts[0].replace(/\//g,'-');var hora=parts[1]?parts[1].substring(0,5):'';
     if(!hora){skipped++;continue}
     var dp=datePart.split('-');var fecha='';
@@ -1851,7 +1914,10 @@ function procH(txt){
     msg+='</div>';
   }
   msg+='<details style="margin-top:6px"><summary style="cursor:pointer;font-size:11px">Ver primeras l\u00edneas</summary><pre style="font-size:10px;overflow-x:auto;white-space:pre-wrap">'+debugLines.join('\n')+'</pre></details>';
-  if(cnt===0)msg+='<br><b style="color:#c53030">\u26a0 Verifica que el archivo tiene c\u00f3digos tipo E000XXX y fechas con hora.</b>';
+  // Muestra ejemplos de c\u00f3digos encontrados en el CSV para diagn\u00f3stico
+  var ejCods=[];sampleRows.slice(0,5).forEach(function(row){var v=(row[colCod]||'').trim().replace(/"/g,'');if(v&&ejCods.indexOf(v)<0)ejCods.push(v);});
+  if(ejCods.length)msg+='C\u00f3digos encontrados en col '+colCod+': <b>'+ejCods.join(', ')+'</b><br>';
+  if(cnt===0)msg+='<br><b style="color:#c53030">\u26a0 Los c\u00f3digos del CSV no coinciden con los trabajadores del sistema. Revisa el formato del archivo.</b>';
   document.getElementById('hSum').innerHTML='<div class="alert '+(cnt>0?'al-i':'al-e')+'">'+msg+'</div>';renderT2();
 }
 function renderT2(){
