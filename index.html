@@ -1991,23 +1991,27 @@ function importarConsolidadoCSV(){
 }
 function procesarImportConsolidado(rows){
   if(rows.length<2){alert('Archivo vacío.');return;}
-  var header=rows[0].map(function(h){return String(h).toLowerCase().trim().replace(/[.\s]/g,'');});
+  function normH(s){return String(s).toLowerCase().trim()
+    .replace(/[.\s_]/g,'')
+    .replace(/[áàâä]/g,'a').replace(/[éèêë]/g,'e').replace(/[íìîï]/g,'i')
+    .replace(/[óòôö]/g,'o').replace(/[úùûü]/g,'u').replace(/ñ/g,'n');}
+  var header=rows[0].map(normH);
   function col(keys){for(var i=0;i<header.length;i++){for(var j=0;j<keys.length;j++){if(header[i].indexOf(keys[j])>=0)return i;}}return -1;}
   var cFecha=col(['fecha','date','dia']);
   var cCod=col(['codigo','code','cod']);
   var cNom=col(['trabajador','nombre','name','worker']);
-  var cArea=col(['area','área']);
+  var cArea=col(['area']);
   var cUni=col(['unidad','unit']);
   var cCat=col(['categoria','category']);
   var cSub=col(['subcategoria','sub','actividad','activity']);
   var cTipo=col(['tipo','type']);
-  var cHAsig=col(['hasig','hasign','asig','pasig']);
-  var cHReg=col(['hreg','hreg','hregistr','reg']);
-  var cRend=col(['rendimiento','rend','cantidad']);
+  var cHAsig=col(['hasig','asig']);
+  var cHReg=col(['hreg','hregistr']);
+  var cRend=col(['rendimiento','rend']);
   var cMods=col(['modulo','module','mod']);
   var cRef=col(['referencia','ref','reference']);
   var cObs=col(['observ','obs','note']);
-  var cSt=col(['aprobacion','aprobación','estado','status','state']);
+  var cSt=col(['aprobacion','estado','status','state']);
   if(cFecha<0||cCod<0){alert('No se encontraron columnas Fecha y/o Código. Usa la plantilla descargable.');return;}
   // Mapas
   var trbByCode={};TRB.forEach(function(t){trbByCode[t.codigo]=t;});
@@ -2104,7 +2108,7 @@ function confirmarImportConsolidado(nuevos){
     reg.push(r);cnt++;
   });
   cerrarModal();guardarLS();stats();renderT2();renderT3();
-  if(SP_READY)Promise.all(nuevos.slice(0,cnt).map(function(r){return spEscribirReg(r).catch(function(){});}));
+  if(SP_READY){var agr=reg.filter(function(r){return nuevos.find(function(n){return n.id===r.id;});});Promise.all(agr.map(function(r){return spEscribirReg(r).catch(function(){});}));}
   toast('✅ '+cnt+' registros consolidados importados'+(dup?' ('+dup+' duplicados omitidos)':''));
   window._consolPreview=null;
 }
