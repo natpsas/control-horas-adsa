@@ -190,7 +190,16 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="fr"><div class="fg"><label>Fecha del huellero</label><input type="date" id="fechaH"></div>
 <div class="fg"><label>Archivo CSV</label><input type="file" id="fileH" accept=".csv,.xls,.xlsx" onchange="cargarH(event)"></div></div>
 <div id="hSum"></div></div>
-<div class="card"><h2>Registrar Horas</h2><div id="t2Filtros"></div><div id="t2List"></div></div></div>
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px">
+    <h2 style="margin:0">Registrar Horas</h2>
+    <div id="t2ImportBtns" style="display:none;gap:6px">
+      <button class="btn btn-sm" onclick="descargarPlantillaConsol()" style="background:#744210;color:#fff;border:none" title="Descarga plantilla con formato de exportación">📋 Plantilla Consolidado</button>
+      <button class="btn btn-sm" onclick="importarConsolidadoCSV()" style="background:#553c9a;color:#fff;border:none" title="Importar registros consolidados desde Excel">📥 Importar Consolidado</button>
+    </div>
+  </div>
+  <div id="t2Filtros"></div><div id="t2List"></div>
+</div></div>
 
 <div id="t3" class="tc">
 <div class="alert al-i"><b>Aprobación</b> — Todo pasa por supervisor. Extras no aprobadas no se pagan.</div>
@@ -1478,6 +1487,9 @@ function setHInput(id,val){
 function guardarModsEnMem(){
   TRB.forEach(function(t){if(!t.activo)return;
     var ex=asg.filter(function(a){return a.w===t.codigo&&a.f===fechaSel&&!a.na});
+    // Guardar obs/ref del trabajador en todas sus actividades
+    var obsEl=document.getElementById('obs1_'+t.codigo);var refEl=document.getElementById('ref1_'+t.codigo);
+    if(obsEl||refEl){var obs=obsEl?obsEl.value:'';var ref=refEl?refEl.value.trim():'';ex.forEach(function(a){a.obs=obs;a.ref=ref;});}
     ex.forEach(function(a,i){var mb=document.getElementById('mb_'+t.codigo+'_'+i);
       if(mb)a.mods=[].slice.call(mb.querySelectorAll('input:checked')).map(function(c){return c.value})});
   });
@@ -1598,6 +1610,14 @@ function renderT1(){
           h+='<div class="fg" style="margin-top:5px"><label>M\u00f3dulos'+(modsUni.length>1?' <button class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllMod(\''+t.codigo+'_'+i+'\')">Todos</button>':'')+'</label><div class="modbox" id="mb_'+t.codigo+'_'+i+'">';
           modsUni.forEach(function(m){var chk=autoSel||(selM.indexOf(m.id)>=0);h+='<div class="cbi"><input type="checkbox" id="md_'+t.codigo+'_'+i+'_'+m.id+'" value="'+m.id+'" '+(chk?'checked':'')+'><label for="md_'+t.codigo+'_'+i+'_'+m.id+'">'+m.nombre+'</label></div>'});h+='</div></div>'}
         h+='</div>'});
+      // Observaciones y Referencia a nivel de asignación del trabajador
+      var ex0=ex[0]||{};
+      h+='<div class="fr" style="margin-top:8px;gap:8px">';
+      h+='<div class="fg" style="flex:2"><label style="font-size:11px">📝 Observaciones <span style="color:#a0aec0;font-weight:400">(opcional)</span></label>';
+      h+='<input type="text" id="obs1_'+t.codigo+'" value="'+_esc(ex0.obs||'')+'" placeholder="Ej: trabajó medio día..." style="font-size:12px" onchange="updObsRef(\''+t.codigo+'\')"></div>';
+      h+='<div class="fg" style="flex:1"><label style="font-size:11px">🔗 Referencia <span style="color:#a0aec0;font-weight:400">(opcional)</span></label>';
+      h+='<input type="text" id="ref1_'+t.codigo+'" value="'+_esc(ex0.ref||'')+'" placeholder="Ej: OP-001" style="font-size:12px" onchange="updObsRef(\''+t.codigo+'\')"></div>';
+      h+='</div>';
       h+='<button class="add-btn" onclick="addAct(\''+t.codigo+'\')">+ Agregar actividad</button></div></div>';
     })}
   c.innerHTML=h;
@@ -1778,6 +1798,12 @@ function delActConsol(cod,idx){
 }
 function updH(cod,idx,val){guardarModsEnMem();var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});var i=asg.indexOf(ex[idx]);if(i>=0){asg[i].h=parseFloat(val)||0;guardarLS()}}
 function updX(cod,idx,val){guardarModsEnMem();var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});var i=asg.indexOf(ex[idx]);if(i>=0){asg[i].x=val;guardarLS()}}
+function updObsRef(cod){
+  var obsEl=document.getElementById('obs1_'+cod);var refEl=document.getElementById('ref1_'+cod);
+  var obs=obsEl?obsEl.value:'';var ref=refEl?refEl.value.trim():'';
+  asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na}).forEach(function(a){a.obs=obs;a.ref=ref;});
+  guardarLS();
+}
 function toggleNA(cod){guardarModsEnMem();var ch=document.getElementById('na_'+cod);var nd=document.getElementById('naD_'+cod);var af=document.getElementById('af_'+cod);
   if(ch.checked){nd.style.display='';af.style.display='none';asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel)});asg.push({f:fechaSel,w:cod,na:true,mt:'',obs:'',h:0})}
   else{nd.style.display='none';af.style.display='';asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel&&a.na)})}guardarLS();stats()}
@@ -1922,8 +1948,170 @@ function procH(txt){
   if(cnt===0)msg+='<br><b style="color:#c53030">\u26a0 Los c\u00f3digos del CSV no coinciden con los trabajadores del sistema. Revisa el formato del archivo.</b>';
   document.getElementById('hSum').innerHTML='<div class="alert '+(cnt>0?'al-i':'al-e')+'">'+msg+'</div>';renderT2();
 }
+// === IMPORTAR CONSOLIDADO (mismo formato que exportación) ===
+function descargarPlantillaConsol(){
+  // Genera plantilla vacía con las mismas columnas que buildXLSX
+  var cols=['Fecha','Código','Trabajador','Área','Unidad','Categoría','Sub Categoría','Tipo','H. Asig','H. Reg','Rendimiento','Módulos','Referencia','Observaciones'];
+  var activos=ACT.filter(function(a){return a.activo});
+  var ejemplos=[];
+  TRB.filter(function(t){return t.activo}).slice(0,3).forEach(function(t){
+    var act=activos[0]||{subcategoria:'',categoria:'',unidad:''};
+    ejemplos.push([fechaSel,t.codigo,t.nombre,t.area,act.unidad||'',act.categoria||'',act.subcategoria||'','NORMAL',8,8,'','','OP-001','']);
+  });
+  var wb=XLSX.utils.book_new();
+  var ws=XLSX.utils.aoa_to_sheet([cols].concat(ejemplos));
+  ws['!cols']=[{wch:12},{wch:10},{wch:24},{wch:16},{wch:12},{wch:22},{wch:36},{wch:8},{wch:8},{wch:8},{wch:12},{wch:28},{wch:14},{wch:28}];
+  XLSX.utils.book_append_sheet(wb,ws,'Consolidado');
+  // Hoja de referencia actividades con código corto
+  var ws2=XLSX.utils.aoa_to_sheet([['Codigo','ActividadID','SubCategoria','Categoria','Unidad']].concat(
+    activos.map(function(a){return[a.codigo||'',a.id,a.subcategoria||'',a.categoria||'',a.unidad||''];})
+  ));
+  ws2['!cols']=[{wch:10},{wch:12},{wch:36},{wch:22},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Actividades');
+  var ws3=XLSX.utils.aoa_to_sheet([['ModuloID','Nombre','Unidad']].concat(MOD.filter(function(m){return m.activo}).map(function(m){return[m.id,m.nombre,m.unidad];})));
+  ws3['!cols']=[{wch:14},{wch:24},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws3,'Modulos');
+  XLSX.writeFile(wb,'plantilla-consolidado-'+fechaSel+'.xlsx');
+  toast('✅ Plantilla Consolidado descargada');
+}
+function importarConsolidadoCSV(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='.csv,.xls,.xlsx';
+  inp.onchange=function(ev){
+    var f=ev.target.files[0];if(!f)return;
+    var r=new FileReader();
+    r.onload=function(e){
+      try{
+        var wb=XLSX.read(e.target.result,{type:'array'});
+        var ws=wb.Sheets[wb.SheetNames[0]];
+        var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        procesarImportConsolidado(rows);
+      }catch(err){alert('Error leyendo archivo: '+err.message);}
+    };r.readAsArrayBuffer(f);
+  };inp.click();
+}
+function procesarImportConsolidado(rows){
+  if(rows.length<2){alert('Archivo vacío.');return;}
+  var header=rows[0].map(function(h){return String(h).toLowerCase().trim().replace(/[.\s]/g,'');});
+  function col(keys){for(var i=0;i<header.length;i++){for(var j=0;j<keys.length;j++){if(header[i].indexOf(keys[j])>=0)return i;}}return -1;}
+  var cFecha=col(['fecha','date','dia']);
+  var cCod=col(['codigo','code','cod']);
+  var cNom=col(['trabajador','nombre','name','worker']);
+  var cArea=col(['area','área']);
+  var cUni=col(['unidad','unit']);
+  var cCat=col(['categoria','category']);
+  var cSub=col(['subcategoria','sub','actividad','activity']);
+  var cTipo=col(['tipo','type']);
+  var cHAsig=col(['hasig','hasign','asig','pasig']);
+  var cHReg=col(['hreg','hreg','hregistr','reg']);
+  var cRend=col(['rendimiento','rend','cantidad']);
+  var cMods=col(['modulo','module','mod']);
+  var cRef=col(['referencia','ref','reference']);
+  var cObs=col(['observ','obs','note']);
+  var cSt=col(['aprobacion','aprobación','estado','status','state']);
+  if(cFecha<0||cCod<0){alert('No se encontraron columnas Fecha y/o Código. Usa la plantilla descargable.');return;}
+  // Mapas
+  var trbByCode={};TRB.forEach(function(t){trbByCode[t.codigo]=t;});
+  var actByName={};var actById={};var actByCod={};
+  ACT.filter(function(a){return a.activo}).forEach(function(a){
+    actByName[(a.subcategoria||'').toLowerCase().trim()]=a;
+    actById[String(a.id)]=a;
+    if(a.codigo)actByCod[a.codigo.toUpperCase()]=a;
+  });
+  var modByKey={};MOD.filter(function(m){return m.activo}).forEach(function(m){modByKey[(m.nombre||'').toLowerCase().trim()]=m.id;modByKey[(m.id||'').toLowerCase()]=m.id;});
+  var nuevos=[],errores=[];
+  for(var i=1;i<rows.length;i++){
+    var row=rows[i];
+    var fecha=String(row[cFecha]||'').trim();
+    var cod=String(row[cCod]||'').trim();
+    if(!fecha||!cod)continue;
+    // Convertir fecha numérica Excel
+    if(!isNaN(fecha)&&fecha.length<8){var d2=new Date(Math.round((parseFloat(fecha)-25569)*86400*1000));fecha=d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0')+'-'+String(d2.getDate()).padStart(2,'0');}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){errores.push('Fila '+(i+1)+': fecha inválida "'+fecha+'"');continue;}
+    var trb=trbByCode[cod];
+    if(!trb){errores.push('Fila '+(i+1)+': código "'+cod+'" no encontrado');continue;}
+    var subRaw=cSub>=0?String(row[cSub]||'').trim():'';
+    var uniRaw=cUni>=0?String(row[cUni]||'').trim():'';
+    var catRaw=cCat>=0?String(row[cCat]||'').trim():'';
+    var tipo=(cTipo>=0?String(row[cTipo]||'NORMAL').trim().toUpperCase():'NORMAL');
+    if(tipo!=='NORMAL'&&tipo!=='EXTRAS')tipo='NORMAL';
+    var hAsig=cHAsig>=0?parseFloat(row[cHAsig])||0:0;
+    var hReg=cHReg>=0?parseFloat(row[cHReg])||hAsig:hAsig;
+    if(hReg<=0&&hAsig>0)hReg=hAsig;
+    if(hReg<=0){errores.push('Fila '+(i+1)+': H.Reg debe ser > 0');continue;}
+    var rend=cRend>=0?(row[cRend]!==''&&row[cRend]!==null?parseFloat(row[cRend])||null:null):null;
+    var modsRaw=cMods>=0?String(row[cMods]||'').trim():'';
+    var ref=cRef>=0?String(row[cRef]||'').trim():'';
+    var obs=cObs>=0?String(row[cObs]||'').trim():'';
+    var stRaw=(cSt>=0?String(row[cSt]||'').trim().toLowerCase():'');
+    var st=stRaw==='aprobado'?'aprobado':stRaw==='rechazado'?'rechazado':'pendiente';
+    // Buscar actividad
+    var act=actByCod[subRaw.toUpperCase()]||actById[subRaw]||actByName[subRaw.toLowerCase()];
+    if(!act&&subRaw){var subL=subRaw.toLowerCase();Object.keys(actByName).forEach(function(k){if(!act&&(k.indexOf(subL)>=0||subL.indexOf(k)>=0))act=actByName[k];});}
+    // Módulos
+    var mods=modsRaw?modsRaw.split(/,|;/).map(function(m){var mt=m.trim();return modByKey[mt.toLowerCase()]||mt;}).filter(Boolean):[];
+    nuevos.push({
+      id:genRegId(),f:fecha,w:trb.codigo,n:trb.nombre,ar:trb.area,
+      act:act?act.id:'',uni:act?act.unidad||'':uniRaw,
+      cat:act?act.categoria||'':catRaw,sub:act?act.subcategoria||'':subRaw,
+      tp:tipo,h:hAsig||hReg,hr:hReg,rend:rend,ind:act?act.indicador||'':'',
+      hhu:null,ehu:null,shu:null,mods:mods,obs:obs,ref:ref,
+      st:st,excede:false,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''
+    });
+  }
+  if(!nuevos.length){
+    var msg='No se encontraron filas válidas.';
+    if(errores.length)msg+='\n\n'+errores.slice(0,10).join('\n');
+    alert(msg);return;
+  }
+  // Preview modal
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:820px;width:98%">';
+  mh+='<h2>📥 Importar Consolidado — Preview</h2>';
+  if(errores.length)mh+='<div class="alert al-w" style="font-size:11px;margin-bottom:8px"><b>⚠ '+errores.length+' filas omitidas:</b><br>'+errores.slice(0,5).join('<br>')+(errores.length>5?'<br>...y '+(errores.length-5)+' más':'')+'</div>';
+  mh+='<p style="font-size:12px;color:#4a5568;margin-bottom:8px"><b>'+nuevos.length+'</b> registros. Los PENDIENTES quedan para aprobar en Tab 3.</p>';
+  mh+='<div style="overflow-x:auto;max-height:360px"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+  mh+='<thead style="position:sticky;top:0"><tr style="background:#edf2f7">';
+  ['Fecha','Trabajador','Actividad','Tipo','H.Asig','H.Reg','Módulos','Ref.','Estado'].forEach(function(col){mh+='<th style="padding:5px 8px;border-bottom:2px solid #e2e8f0;text-align:left">'+col+'</th>';});
+  mh+='</tr></thead><tbody>';
+  nuevos.forEach(function(r){
+    var tpC=r.tp==='EXTRAS'?'color:#92400e;background:#fef3c7':'color:#276749;background:#f0fff4';
+    var stC=r.st==='aprobado'?'color:#276749;background:#c6f6d5':'color:#92400e;background:#fef3c7';
+    mh+='<tr style="border-bottom:1px solid #e2e8f0">';
+    mh+='<td style="padding:4px 8px;white-space:nowrap">'+r.f+'</td>';
+    mh+='<td style="padding:4px 8px">'+r.n+'</td>';
+    mh+='<td style="padding:4px 8px">'+r.sub+'</td>';
+    mh+='<td style="padding:4px 8px"><span style="font-size:10px;padding:1px 5px;border-radius:3px;'+tpC+'">'+r.tp+'</span></td>';
+    mh+='<td style="padding:4px 8px;text-align:center">'+r.h+'h</td>';
+    mh+='<td style="padding:4px 8px;text-align:center;font-weight:700;color:#2b6cb0">'+r.hr+'h</td>';
+    mh+='<td style="padding:4px 8px;font-size:10px;color:#718096">'+r.mods.join(', ')+'</td>';
+    mh+='<td style="padding:4px 8px;font-size:10px">'+r.ref+'</td>';
+    mh+='<td style="padding:4px 8px"><span style="font-size:10px;padding:1px 5px;border-radius:3px;'+stC+'">'+r.st.toUpperCase()+'</span></td>';
+    mh+='</tr>';
+  });
+  mh+='</tbody></table></div>';
+  mh+='<div style="display:flex;gap:8px;margin-top:14px">';
+  mh+='<button class="btn btn-s" onclick="confirmarImportConsolidado(window._consolPreview)">✅ Confirmar carga</button>';
+  mh+='<button class="btn btn-d" onclick="cerrarModal()">Cancelar</button>';
+  mh+='</div></div></div>';
+  window._consolPreview=nuevos;
+  document.getElementById('modalContainer').innerHTML=mh;
+}
+function confirmarImportConsolidado(nuevos){
+  if(!nuevos||!nuevos.length)return;
+  var cnt=0,dup=0;
+  nuevos.forEach(function(r){
+    var existe=reg.find(function(x){return x.f===r.f&&x.w===r.w&&String(x.act)===String(r.act)&&x.tp===r.tp;});
+    if(existe){dup++;return;}
+    reg.push(r);cnt++;
+  });
+  cerrarModal();guardarLS();stats();renderT2();renderT3();
+  if(SP_READY)Promise.all(nuevos.slice(0,cnt).map(function(r){return spEscribirReg(r).catch(function(){});}));
+  toast('✅ '+cnt+' registros consolidados importados'+(dup?' ('+dup+' duplicados omitidos)':''));
+  window._consolPreview=null;
+}
 function renderT2(){
   guardarModsConsol();
+  var t2ib=document.getElementById('t2ImportBtns');
+  if(t2ib)t2ib.style.display=esAdmin()?'flex':'none';
   var c=document.getElementById('t2List'),d=fechaSel;
   // Leer filtros (sin reconstruir la barra si ya existe)
   var fltBusq=(document.getElementById('t2BusqW')?document.getElementById('t2BusqW').value||'':'').toLowerCase();
@@ -2043,8 +2231,9 @@ function renderT2(){
       if(tieneR)h+='<div class="fg"><label>Rend. '+(act.desc_rend||indLabel(act.indicador))+'</label><input type="number" id="rend_'+cod+'_'+i+'" value="'+(a.rend||'')+'" min="0" step="1" placeholder="Cantidad"></div>';
       h+='</div></div>'});
     h+='<div class="fr" style="margin-top:7px"><div class="fg"><label>Horas totales (m\u00e1x: '+maxN+'h)</label>'+hInput('ht_'+cod,totalH,16,null)+'</div>';
-    h+='<div class="fg"><label>Referencia <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="ref_'+cod+'" placeholder="Ej: OP-001, Lote A..."></div>';
-    h+='<div class="fg"><label>Obs. <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="cobs_'+cod+'" placeholder="Opcional"></div>';
+    var asgRef=(acts[0]&&acts[0].ref)||'';var asgObs=(acts[0]&&acts[0].obs)||'';
+    h+='<div class="fg"><label>Referencia <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="ref_'+cod+'" value="'+_esc(asgRef)+'" placeholder="Ej: OP-001, Lote A..."></div>';
+    h+='<div class="fg"><label>Obs. <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="text" id="cobs_'+cod+'" value="'+_esc(asgObs)+'" placeholder="Opcional"></div>';
     h+='<div class="fg" style="display:flex;align-items:flex-end"><button class="btn btn-s" onclick="consolidar(\''+cod+'\')">Confirmar</button></div></div>';
     h+='<button class="add-btn" onclick="addAct(\''+cod+'\')">Ajustar: + actividad</button></div>'});c.innerHTML=h;
 }
@@ -3320,14 +3509,14 @@ function doImpAct(ev){var f=ev.target.files[0];if(!f)return;var r=new FileReader
 function descargarPlantillaAsg(){
   var wb=XLSX.utils.book_new();
   // Hoja plantilla
-  var cols=['Fecha','Codigo','SubCategoria','Horas','Tipo','Modulos','Observaciones'];
+  var cols=['Fecha','Codigo','SubCategoria','Horas','Tipo','Modulos','Referencia','Observaciones'];
   var ejemplos=[
-    [fechaSel,'E001234','PREPARACION SUSTRATO (MEZCLA)',8,'NORMAL','S-1',''],
-    [fechaSel,'E001235','COSECHA',8,'NORMAL','Modulo 1, Modulo 2',''],
-    [fechaSel,'E001234','COSECHA',1,'EXTRAS','Modulo 1','Hora extra autorizada']
+    [fechaSel,'E001234','PREPARACION SUSTRATO (MEZCLA)',8,'NORMAL','S-1','OP-001',''],
+    [fechaSel,'E001235','COSECHA',8,'NORMAL','Modulo 1, Modulo 2','OP-001',''],
+    [fechaSel,'E001234','COSECHA',1,'EXTRAS','Modulo 1','','Hora extra autorizada']
   ];
   var ws=XLSX.utils.aoa_to_sheet([cols].concat(ejemplos));
-  ws['!cols']=[{wch:12},{wch:10},{wch:36},{wch:7},{wch:8},{wch:28},{wch:24}];
+  ws['!cols']=[{wch:12},{wch:10},{wch:36},{wch:7},{wch:8},{wch:28},{wch:14},{wch:28}];
   XLSX.utils.book_append_sheet(wb,ws,'Asignaciones');
   // Hoja referencia actividades
   var ws2=XLSX.utils.aoa_to_sheet([['Codigo','ActividadID','SubCategoria','Categoria','Unidad','UsaModulo']].concat(
@@ -3376,6 +3565,7 @@ function procesarImportAsg(rows){
   var cTipo=col(['tipo','type','extra']);
   var cMods=col(['modulo','module','mod']);
   var cObs=col(['obs','observ','note']);
+  var cRef=col(['ref','referencia','reference','lote','op']);
   var cActId=col(['actividadid','act_id','id actividad']);
   if(cFecha<0||cCod<0){alert('No se encontraron columnas Fecha y Código. Usa la plantilla descargable.');return;}
   // Mapas rápidos: por nombre, por ID numérico y por código corto
@@ -3398,6 +3588,7 @@ function procesarImportAsg(rows){
     var x=tipo==='EXTRAS'||tipo==='EXT';
     var modsRaw=cMods>=0?String(row[cMods]||'').trim():'';
     var obsRaw=cObs>=0?String(row[cObs]||'').trim():'';
+    var refRaw2=cRef>=0?String(row[cRef]||'').trim():'';
     var actIdRaw=cActId>=0?String(row[cActId]||'').trim():'';
     if(!fecha||!cod)continue;
     var trb=trbByCode[cod];
@@ -3423,7 +3614,7 @@ function procesarImportAsg(rows){
         if(mid)mods.push(mid);
       });
     }
-    nuevas.push({fecha:fecha,trb:trb,act:act,h:hRaw||8,x:x,mods:mods,obs:obsRaw});
+    nuevas.push({fecha:fecha,trb:trb,act:act,h:hRaw||8,x:x,mods:mods,obs:obsRaw,ref:refRaw2});
   }
   if(!nuevas.length){
     var msg='No se encontraron filas válidas.';
@@ -3463,7 +3654,7 @@ function confirmarImportAsg(nuevas){
   nuevas.forEach(function(a){
     var existe=asg.find(function(x){return x.f===a.fecha&&x.w===a.trb.codigo&&String(x.act)===String(a.act.id)&&!x.na;});
     if(existe){dup++;return;}
-    asg.push({f:a.fecha,w:a.trb.codigo,act:a.act.id,uni:a.act.unidad||'',h:a.h,x:a.x,mods:a.mods,na:false,mt:'',obs:a.obs,rend:null});
+    asg.push({f:a.fecha,w:a.trb.codigo,act:a.act.id,uni:a.act.unidad||'',h:a.h,x:a.x,mods:a.mods,na:false,mt:'',obs:a.obs||'',ref:a.ref||'',rend:null});
     cnt++;
   });
   cerrarModal();guardarLS();stats();renderT1();
