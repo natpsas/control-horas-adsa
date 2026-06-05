@@ -179,7 +179,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="alert al-i"><b>Asignación Matutina</b> — Plan del día. Agrega actividades con +. Ajustes finales en Consolidación.</div>
 <div class="card"><h2>Asignación de Actividades</h2>
 <div class="fb"><input type="text" id="srcW" placeholder="🔍 Buscar..." oninput="renderT1()"><select id="fltA" onchange="renderT1()"><option value="">Todas las áreas</option></select>
-<button class="btn btn-s btn-sm" onclick="guardarAsignaciones()">💾 Guardar</button><button id="btnAsigMasiva" class="btn btn-p btn-sm" onclick="modalAsignacionMasiva()" style="display:none" title="Asignar la misma actividad a varios trabajadores a la vez">👥 Asig. Masiva</button></div>
+<button class="btn btn-s btn-sm" onclick="guardarAsignaciones()">💾 Guardar</button><button id="btnAsigMasiva" class="btn btn-p btn-sm" onclick="modalAsignacionMasiva()" style="display:none" title="Asignar la misma actividad a varios trabajadores a la vez">👥 Asig. Masiva</button><button id="btnImpAsg" class="btn btn-sm" onclick="importarAsgCSV()" style="display:none;background:#553c9a;color:#fff;border:none" title="Importar asignaciones desde Excel/CSV">📥 Importar CSV</button><button id="btnPlantAsg" class="btn btn-sm" onclick="descargarPlantillaAsg()" style="display:none;background:#744210;color:#fff;border:none" title="Descargar plantilla Excel para importar asignaciones">📋 Plantilla</button></div>
 <div id="t1List"></div>
 <button class="btn btn-s" onclick="guardarT1()" style="margin-top:12px;width:100%">💾 Guardar Asignaciones</button>
 </div></div>
@@ -324,7 +324,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 
 <div class="card"><h2>📋 Actividades</h2>
 <div class="fb"><select id="gFltU" onchange="document.getElementById('gFltC').value='';renderGAct()"><option value="">Todas unidades</option></select><select id="gFltC" onchange="renderGAct()"><option value="">Todas categorías</option></select></div>
-<table><thead><tr><th>Categoría</th><th>SubCategoría</th><th>Ind.</th><th>Módulo</th><th>Aprobador</th><th>Acciones</th></tr></thead><tbody id="g2"></tbody></table>
+<table><thead><tr><th>Código</th><th>Categoría</th><th>SubCategoría</th><th>Ind.</th><th>Módulo</th><th>Aprobador</th><th>Acciones</th></tr></thead><tbody id="g2"></tbody></table>
 <div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalAct()">+ Agregar</button><button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:none;font-weight:600;padding:4px 8px;border-radius:7px;cursor:pointer;font-size:11px" onclick="modalRenombrarCat()">✏️ Renombrar cat.</button><button class="btn btn-s btn-sm" onclick="expActCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('act')">Importar CSV</button></div>
 <input type="file" id="csvAct" accept=".csv,.xls,.xlsx" style="display:none" onchange="doImpAct(event)"></div>
 
@@ -1487,6 +1487,8 @@ function guardarModsEnMem(){
 function renderT1(){
   var bam=document.getElementById('btnAsigMasiva');
   if(bam)bam.style.display=esAdmin()?'inline-block':'none';
+  var bi=document.getElementById('btnImpAsg');if(bi)bi.style.display=esAdmin()?'inline-block':'none';
+  var bp=document.getElementById('btnPlantAsg');if(bp)bp.style.display=esAdmin()?'inline-block':'none';
 
   guardarModsEnMem();
   var c=document.getElementById('t1List'),src=(document.getElementById('srcW').value||'').toLowerCase(),flt=document.getElementById('fltA').value,d=fechaSel;
@@ -2199,6 +2201,8 @@ function renderT3(){
   fh+='<span style="font-size:11px;color:#718096;margin-left:4px">'+filtrados.length+' registro(s)</span>';
   if(aprobacionMasivaActiva&&pendFiltrados.length>0&&tienePermiso('aprobacion_masiva'))
     fh+='<button class="btn btn-s btn-sm" onclick="aprobarMasivo()" style="margin-left:auto">Aprobar pendientes ('+pendFiltrados.length+')</button>';
+  fh+='<button class="btn btn-sm" onclick="descargarPlantillaReg()" style="background:#744210;color:#fff;border:none;margin-left:4px" title="Descarga plantilla Excel para carga masiva">📋 Plantilla</button>';
+  fh+='<button class="btn btn-sm" onclick="importarRegCSV()" style="background:#553c9a;color:#fff;border:none;margin-left:4px" title="Importar registros desde Excel para aprobar">📥 Importar Excel</button>';
   fh+='</div>';
   document.getElementById('t3Filtros').innerHTML=fh;
   if(!filtrados.length){tb.innerHTML='<tr><td colspan="10" style="text-align:center;padding:16px;color:#a0aec0">Sin registros</td></tr>';return}
@@ -2294,6 +2298,165 @@ function eliminarRechazado(ri){
   guardarLS();stats();renderT3();renderT1();
   if(SP_READY)spEliminarReg(r).catch(function(){});
   toast('🗑️ Registro eliminado');
+}
+// === IMPORTAR REGISTROS DESDE EXCEL ===
+function descargarPlantillaReg(){
+  var wb=XLSX.utils.book_new();
+  var cols=['Fecha','Codigo','SubCategoria','Tipo','H.Reg','Modulos','Rendimiento','Referencia','Observaciones'];
+  var ejemplo=[
+    ['2026-05-22','E001234','PREPARACION SUSTRATO (MEZCLA)','NORMAL',8,'S-1','','OP-001',''],
+    ['2026-05-22','E001235','COSECHA','NORMAL',8,'Modulo 1, Modulo 2','','',''],
+    ['2026-05-22','E001234','COSECHA','EXTRAS',1,'Modulo 1','','','Hora extra']
+  ];
+  var ws=XLSX.utils.aoa_to_sheet([cols].concat(ejemplo));
+  ws['!cols']=[{wch:12},{wch:10},{wch:36},{wch:8},{wch:7},{wch:24},{wch:12},{wch:14},{wch:24}];
+  XLSX.utils.book_append_sheet(wb,ws,'Registros');
+  // Hoja de referencia con actividades y módulos disponibles
+  var refCols=['ActividadID','SubCategoria','Categoria','Unidad','UsaModulo'];
+  var refRows=ACT.filter(function(a){return a.activo}).map(function(a){return[a.id,a.subcategoria||'',a.categoria||'',a.unidad||'',a.usa_modulo?'SI':'NO']});
+  var ws2=XLSX.utils.aoa_to_sheet([refCols].concat(refRows));
+  ws2['!cols']=[{wch:12},{wch:36},{wch:22},{wch:14},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Actividades');
+  var modCols=['ModuloID','Nombre','Unidad'];
+  var modRows=MOD.filter(function(m){return m.activo}).map(function(m){return[m.id,m.nombre,m.unidad]});
+  var ws3=XLSX.utils.aoa_to_sheet([modCols].concat(modRows));
+  ws3['!cols']=[{wch:14},{wch:24},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws3,'Modulos');
+  XLSX.writeFile(wb,'plantilla-registros.xlsx');
+  toast('✅ Plantilla descargada');
+}
+function importarRegCSV(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='.csv,.xls,.xlsx';
+  inp.onchange=function(ev){
+    var f=ev.target.files[0];if(!f)return;
+    var r=new FileReader();
+    r.onload=function(e){
+      try{
+        var wb=XLSX.read(e.target.result,{type:'array'});
+        var ws=wb.Sheets[wb.SheetNames[0]];
+        var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        procesarImportReg(rows);
+      }catch(err){alert('Error leyendo archivo: '+err.message);}
+    };r.readAsArrayBuffer(f);
+  };inp.click();
+}
+function procesarImportReg(rows){
+  if(rows.length<2){alert('Archivo vacío o sin datos.');return;}
+  // Detectar columnas por header
+  var header=rows[0].map(function(h){return String(h).toLowerCase().trim();});
+  function col(keys){for(var i=0;i<header.length;i++){for(var j=0;j<keys.length;j++){if(header[i].indexOf(keys[j])>=0)return i;}}return -1;}
+  var cFecha=col(['fecha','date','dia']);
+  var cCod=col(['codigo','code','cod','emp','reg']);
+  var cSub=col(['subcategoria','sub','actividad','activity']);
+  var cTipo=col(['tipo','type']);
+  var cHReg=col(['h.reg','hreg','h reg','horas','hours','h_reg']);
+  var cMods=col(['modulo','module','mod']);
+  var cRend=col(['rendimiento','rend','cantidad']);
+  var cRef=col(['referencia','ref','reference']);
+  var cObs=col(['obs','observ','note']);
+  var cActId=col(['actividadid','actividad_id','act_id','id']);
+  if(cFecha<0||cCod<0){alert('No se encontraron columnas de Fecha y/o Código. Usa la plantilla descargable.');return;}
+  // Mapa rápido de actividades por subcategoria (normalizado) y por id
+  var actByName={};var actById={};
+  ACT.forEach(function(a){
+    if(a.activo){
+      actByName[(a.subcategoria||'').toLowerCase().trim()]=a;
+      actById[String(a.id)]=a;
+    }
+  });
+  // Mapa de trabajadores
+  var trbByCode={};TRB.forEach(function(t){trbByCode[t.codigo]=t;});
+  // Procesar filas
+  var nuevos=[],errores=[];
+  for(var i=1;i<rows.length;i++){
+    var row=rows[i];
+    var fecha=String(row[cFecha]||'').trim();
+    var cod=String(row[cCod]||'').trim();
+    var subRaw=cSub>=0?String(row[cSub]||'').trim():'';
+    var tipo=cTipo>=0?String(row[cTipo]||'NORMAL').trim().toUpperCase():'NORMAL';
+    var hrRaw=cHReg>=0?parseFloat(row[cHReg])||0:0;
+    var modsRaw=cMods>=0?String(row[cMods]||'').trim():'';
+    var rendRaw=cRend>=0?(row[cRend]!==''?parseFloat(row[cRend])||null:null):null;
+    var refRaw=cRef>=0?String(row[cRef]||'').trim():'';
+    var obsRaw=cObs>=0?String(row[cObs]||'').trim():'';
+    var actIdRaw=cActId>=0?String(row[cActId]||'').trim():'';
+    if(!fecha||!cod){errores.push('Fila '+(i+1)+': fecha o código vacío');continue;}
+    // Validar trabajador
+    var trb=trbByCode[cod];
+    if(!trb){errores.push('Fila '+(i+1)+': código "'+cod+'" no encontrado en TRB');continue;}
+    // Validar fecha
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){errores.push('Fila '+(i+1)+': fecha "'+fecha+'" inválida (usar YYYY-MM-DD)');continue;}
+    // Validar horas
+    if(hrRaw<=0){errores.push('Fila '+(i+1)+': H.Reg debe ser > 0');continue;}
+    // Buscar actividad
+    var act=actById[actIdRaw]||actByName[subRaw.toLowerCase()]||null;
+    if(!act&&subRaw){
+      // Búsqueda parcial
+      var subL=subRaw.toLowerCase();
+      var keys=Object.keys(actByName);
+      for(var ki=0;ki<keys.length;ki++){if(keys[ki].indexOf(subL)>=0||subL.indexOf(keys[ki])>=0){act=actByName[keys[ki]];break;}}
+    }
+    if(!act){errores.push('Fila '+(i+1)+': actividad "'+subRaw+'" no encontrada');continue;}
+    // Módulos
+    var mods=modsRaw?modsRaw.split(/,|;/).map(function(m){return m.trim();}).filter(Boolean):[];
+    // Tipo
+    if(tipo!=='NORMAL'&&tipo!=='EXTRAS')tipo='NORMAL';
+    nuevos.push({
+      id:genRegId(),f:fecha,w:trb.codigo,n:trb.nombre,ar:trb.area,
+      act:act.id,uni:act.unidad||'',cat:act.categoria||'',sub:act.subcategoria||'',
+      tp:tipo,h:hrRaw,hr:hrRaw,rend:rendRaw,ind:act.indicador||'',
+      hhu:null,ehu:null,shu:null,mods:mods,
+      obs:obsRaw,ref:refRaw,st:'pendiente',excede:false,
+      fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''
+    });
+  }
+  // Mostrar preview
+  if(!nuevos.length){
+    var msg='No se pudo procesar ningún registro.';
+    if(errores.length)msg+='\n\nErrores:\n'+errores.slice(0,10).join('\n');
+    alert(msg);return;
+  }
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:780px;width:97%">';
+  mh+='<h2>📥 Importar registros — Preview</h2>';
+  if(errores.length)mh+='<div class="alert al-w" style="font-size:11px;margin-bottom:10px"><b>⚠ '+errores.length+' filas con error (se omiten):</b><br>'+errores.slice(0,5).join('<br>')+(errores.length>5?'<br>...y '+(errores.length-5)+' más':'')+'</div>';
+  mh+='<p style="font-size:12px;color:#4a5568;margin-bottom:10px"><b>'+nuevos.length+'</b> registros listos para importar con estado <b>PENDIENTE</b>. Quedarán disponibles para aprobar en Tab 3.</p>';
+  mh+='<div style="overflow-x:auto;max-height:340px"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+  mh+='<thead style="position:sticky;top:0"><tr style="background:#edf2f7"><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Fecha</th><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Trabajador</th><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Actividad</th><th style="padding:5px 8px;text-align:center;border-bottom:2px solid #e2e8f0">Tipo</th><th style="padding:5px 8px;text-align:center;border-bottom:2px solid #e2e8f0">H.Reg</th><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Módulos</th><th style="padding:5px 8px;text-align:center;border-bottom:2px solid #e2e8f0">Rend.</th></tr></thead><tbody>';
+  nuevos.forEach(function(r){
+    var tpCol=r.tp==='EXTRAS'?'color:#92400e;background:#fef3c7':'color:#276749;background:#f0fff4';
+    mh+='<tr style="border-bottom:1px solid #e2e8f0">';
+    mh+='<td style="padding:4px 8px;white-space:nowrap">'+r.f+'</td>';
+    mh+='<td style="padding:4px 8px">'+r.n+'</td>';
+    mh+='<td style="padding:4px 8px">'+r.sub+'</td>';
+    mh+='<td style="padding:4px 8px;text-align:center"><span style="font-size:10px;padding:1px 6px;border-radius:4px;'+tpCol+'">'+r.tp+'</span></td>';
+    mh+='<td style="padding:4px 8px;text-align:center;font-weight:700">'+r.hr+'h</td>';
+    mh+='<td style="padding:4px 8px;font-size:10px;color:#718096">'+r.mods.join(', ')+'</td>';
+    mh+='<td style="padding:4px 8px;text-align:center">'+(r.rend!=null?r.rend:'-')+'</td>';
+    mh+='</tr>';
+  });
+  mh+='</tbody></table></div>';
+  mh+='<div style="display:flex;gap:8px;margin-top:14px">';
+  mh+='<button class="btn btn-s" onclick="confirmarImportReg(window._importPreview)">✅ Confirmar importación</button>';
+  mh+='<button class="btn btn-d" onclick="cerrarModal()">Cancelar</button>';
+  mh+='</div></div></div>';
+  window._importPreview=nuevos;
+  document.getElementById('modalContainer').innerHTML=mh;
+}
+function confirmarImportReg(nuevos){
+  if(!nuevos||!nuevos.length)return;
+  var duplicados=0;
+  nuevos.forEach(function(r){
+    // Evitar duplicados exactos (misma fecha+trabajador+actividad+tipo)
+    var existe=reg.find(function(x){return x.f===r.f&&x.w===r.w&&String(x.act)===String(r.act)&&x.tp===r.tp;});
+    if(existe){duplicados++;return;}
+    reg.push(r);
+  });
+  cerrarModal();
+  guardarLS();
+  if(SP_READY)Promise.all(reg.filter(function(r){return !r._spId&&nuevos.find(function(n){return n.id===r.id;})}).map(function(r){return spEscribirReg(r).catch(function(){});}));
+  toast('✅ '+(nuevos.length-duplicados)+' registros importados'+(duplicados?' ('+duplicados+' duplicados omitidos)':''));
+  renderT3();
+  window._importPreview=null;
 }
 function aprobarMasivo(){
   if(!tienePermiso('aprobacion_masiva')){alert('No tienes permiso para usar la aprobación masiva.');return;}
@@ -2665,8 +2828,8 @@ function expTrbCSV(){
   var b=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='trabajadores.csv';l.click();
 }
 function expActCSV(){
-  var csv='id,unidad,categoria,subcategoria,indicador,desc_rend,usa_modulo,aprobador,activo\n';
-  ACT.forEach(function(a){csv+=a.id+',"'+a.unidad+'","'+a.categoria+'","'+a.subcategoria+'","'+(a.indicador||'')+'","'+(a.desc_rend||'')+'",'+a.usa_modulo+',"'+(a.aprobador||'ADMIN')+'",'+a.activo+'\n'});
+  var csv='id,codigo,unidad,categoria,subcategoria,indicador,desc_rend,usa_modulo,aprobador,activo\n';
+  ACT.forEach(function(a){csv+=a.id+',"'+(a.codigo||'')+'","'+a.unidad+'","'+a.categoria+'","'+a.subcategoria+'","'+(a.indicador||'')+'","'+(a.desc_rend||'')+'",'+a.usa_modulo+',"'+(a.aprobador||'ADMIN')+'",'+a.activo+'\n'});
   var b=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='actividades.csv';l.click();
 }
 function expModCSV(){
@@ -2895,7 +3058,9 @@ function guardarPermisos(){
 function renderGTrb(){var html='';var adm=esAdmin();TRB.forEach(function(t){html+='<tr style="'+(t.activo?'':'opacity:.5')+'"><td>'+t.codigo+'</td><td>'+t.nombre+'</td><td>'+t.area+'</td><td>'+(adm?(t.actividad_base?'<span class="badge b-ok" style="font-size:9px">Base</span> ':'')+' <button class="btn btn-i btn-sm" onclick="modalTrb(\''+t.codigo+'\')">Ed</button> <button class="btn btn-sm" style="background:#dbeafe;font-size:10px" onclick="modalConfigBase(\''+t.codigo+'\')">Base</button> <button class="btn btn-d btn-sm" onclick="togTrb(\''+t.codigo+'\')">'+(t.activo?'Des':'Act')+'</button>':'<span class="badge" style="background:'+(t.activo?'#c6f6d5':'#e2e8f0')+';color:'+(t.activo?'#276749':'#718096')+';font-size:9px">'+(t.activo?'Activo':'Inactivo')+'</span>')+'</td></tr>'});document.getElementById('g1').innerHTML=html}
 function renderGAct(){var uni=document.getElementById('gFltU').value;var cat=document.getElementById('gFltC').value;var list=ACT.filter(function(a){return(!uni||a.unidad===uni)&&(!cat||a.categoria===cat)});
   var html='';var adm=esAdmin();list.forEach(function(a){
-    html+='<tr style="'+(a.activo?'':'opacity:.5')+'"><td style="font-size:10px">'+a.categoria+'</td><td style="font-size:10px">'+a.subcategoria+'</td><td style="font-size:10px">'+(a.indicador||'-')+'</td>';
+    var codCell=adm?'<input type="text" value="'+_esc(a.codigo||'')+'" placeholder="ej: COS" maxlength="10" style="width:70px;padding:2px 5px;border:1.5px solid #e2e8f0;border-radius:4px;font-size:10px;font-weight:700;color:#2b6cb0" onchange="setActCodigo(\''+a.id+'\',this.value)" title="Código corto para usar en CSV de importación">'
+      :'<span style="font-size:10px;font-weight:700;color:#2b6cb0">'+(a.codigo||'—')+'</span>';
+    html+='<tr style="'+(a.activo?'':'opacity:.5')+'"><td>'+codCell+'</td><td style="font-size:10px">'+a.categoria+'</td><td style="font-size:10px">'+a.subcategoria+'</td><td style="font-size:10px">'+(a.indicador||'-')+'</td>';
     // Columna Módulo
     html+='<td style="text-align:center">';
     if(adm){html+='<button class="btn btn-sm" style="font-size:10px;background:'+(a.usa_modulo?'#c6f6d5;color:#276749':'#fecaca;color:#991b1b')+'" onclick="togUsaModulo(\''+a.id+'\')">'+(a.usa_modulo?'Sí':'No')+'</button>';}
@@ -3037,6 +3202,17 @@ function doSaveAct(){var u=document.getElementById('mAU').value,c=document.getEl
   if(!c||!s){alert('Requeridos');return}var maxId=0;ACT.forEach(function(a){var n=parseInt(a.id)||0;if(n>maxId)maxId=n});
   ACT.push({id:String(maxId+1),unidad:u,categoria:c,subcategoria:s,indicador:document.getElementById('mAI').value.trim(),desc_rend:document.getElementById('mAD').value.trim(),usa_modulo:true,orden:maxId+1,activo:true,aprobador:ap}); var newAct=ACT[ACT.length-1]; guardarLS();cerrarModal();renderGAct();toast('✅ Actividad guardada'); if(SP_READY&&newAct)spGuardarActividad(newAct).catch(function(e){toast('⚠️ Error SP ACT: '+e.message,'warn');});}
 function _esc(s){return(s||'').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function setActCodigo(id,val){
+  var a=ACT.find(function(x){return x.id===id});if(!a)return;
+  var cod=val.trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
+  // Verificar unicidad
+  var dup=ACT.find(function(x){return x.id!==id&&x.codigo&&x.codigo===cod;});
+  if(cod&&dup){toast('⚠ Código "'+cod+'" ya existe en "'+dup.subcategoria+'"','warn');return;}
+  a.codigo=cod;
+  guardarLS();
+  if(SP_READY)spGuardarActividad(a).catch(function(){});
+  toast('✅ Código "'+(cod||'—')+'" asignado a '+a.subcategoria);
+}
 function modalEditAct(id){
   if(!soloAdmin())return;
   var a=ACT.find(function(x){return x.id===id});if(!a)return;
@@ -3046,7 +3222,8 @@ function modalEditAct(id){
   UNI.forEach(function(u){mh+='<option value="'+_esc(u.id)+'"'+(a.unidad===u.id?' selected':'')+'>'+_esc(u.id)+'</option>'});
   mh+='</select></div>';
   mh+='<div class="fg"><label>Categoría</label><input id="eAC" value="'+_esc(a.categoria)+'"></div>';
-  mh+='<div class="fg"><label>SubCategoría</label><input id="eAS" value="'+_esc(a.subcategoria)+'"></div>';
+  mh+='<div class="grid-2"><div class="fg"><label>SubCategoría</label><input id="eAS" value="'+_esc(a.subcategoria)+'"></div>';
+  mh+='<div class="fg"><label>Código corto <span style="color:#a0aec0;font-weight:400;font-size:10px">(para CSV, ej: COS, RIEGO)</span></label><input id="eACod" value="'+_esc(a.codigo||'')+'" maxlength="10" placeholder="ej: COS" style="font-weight:700;color:#2b6cb0"></div></div>';
   mh+='<div class="grid-2">';
   mh+='<div class="fg"><label>Indicador</label><input id="eAI" value="'+_esc(a.indicador||'')+'"></div>';
   mh+='<div class="fg"><label>Desc. Rendimiento</label><input id="eAD" value="'+_esc(a.desc_rend||'')+'"></div></div>';
@@ -3067,6 +3244,9 @@ function doEditAct(){
   if(!cat||!sub){alert('Categoría y SubCategoría requeridas');return;}
   a.unidad=document.getElementById('eAU').value;
   a.categoria=cat;a.subcategoria=sub;
+  var newCod=(document.getElementById('eACod').value||'').trim().toUpperCase().replace(/[^A-Z0-9_]/g,'');
+  if(newCod){var dup=ACT.find(function(x){return x.id!==id&&x.codigo===newCod;});if(dup){alert('Código "'+newCod+'" ya existe en "'+dup.subcategoria+'"');return;}}
+  a.codigo=newCod||undefined;
   a.indicador=document.getElementById('eAI').value.trim();
   a.desc_rend=document.getElementById('eAD').value.trim();
   a.orden=parseInt(document.getElementById('eAO').value)||a.orden;
@@ -3136,6 +3316,160 @@ function doSaveCargo(id){var c=CARGOS.find(function(x){return x.id===id});if(!c)
 function doImpTrb(ev){var f=ev.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(e){var lines=e.target.result.split('\n');var cnt=0;for(var i=1;i<lines.length;i++){var l=lines[i].trim();if(!l)continue;var p=l.split(',');if(p.length<4)continue;var cod=p[0].replace(/"/g,'').trim(),area=p[1].replace(/"/g,'').trim(),estado=p[2].replace(/"/g,'').trim(),nombre=p[3].replace(/"/g,'').trim();if(!cod||!nombre)continue;var ex=TRB.find(function(t){return t.codigo===cod});if(ex){ex.nombre=nombre;ex.area=area;ex.activo=estado==='ACTIVO'}else{TRB.push({codigo:cod,nombre:nombre,area:area,supervisor:'',actividad_base:'',activo:estado==='ACTIVO'})}cnt++}guardarLS();alert(cnt+' importados');renderGTrb()};r.readAsText(f)}
 function doImpAct(ev){var f=ev.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(e){var lines=e.target.result.split('\n');var cnt=0;for(var i=1;i<lines.length;i++){var l=lines[i].trim();if(!l)continue;var p=l.split(',');if(p.length<4)continue;var maxId=0;ACT.forEach(function(a){var n=parseInt(a.id)||0;if(n>maxId)maxId=n});ACT.push({id:String(maxId+1),unidad:p[0].replace(/"/g,'').trim(),categoria:p[1].replace(/"/g,'').trim(),subcategoria:p[2].replace(/"/g,'').trim(),indicador:(p[3]||'').replace(/"/g,'').trim(),desc_rend:'',usa_modulo:true,orden:maxId+1,activo:true,aprobador:'ADMIN'});cnt++}guardarLS();alert(cnt+' importadas');renderGAct()};r.readAsText(f)}
 // === ASIGNACION MASIVA ===
+// === IMPORTAR ASIGNACIONES DESDE CSV/EXCEL ===
+function descargarPlantillaAsg(){
+  var wb=XLSX.utils.book_new();
+  // Hoja plantilla
+  var cols=['Fecha','Codigo','SubCategoria','Horas','Tipo','Modulos','Observaciones'];
+  var ejemplos=[
+    [fechaSel,'E001234','PREPARACION SUSTRATO (MEZCLA)',8,'NORMAL','S-1',''],
+    [fechaSel,'E001235','COSECHA',8,'NORMAL','Modulo 1, Modulo 2',''],
+    [fechaSel,'E001234','COSECHA',1,'EXTRAS','Modulo 1','Hora extra autorizada']
+  ];
+  var ws=XLSX.utils.aoa_to_sheet([cols].concat(ejemplos));
+  ws['!cols']=[{wch:12},{wch:10},{wch:36},{wch:7},{wch:8},{wch:28},{wch:24}];
+  XLSX.utils.book_append_sheet(wb,ws,'Asignaciones');
+  // Hoja referencia actividades
+  var ws2=XLSX.utils.aoa_to_sheet([['Codigo','ActividadID','SubCategoria','Categoria','Unidad','UsaModulo']].concat(
+    ACT.filter(function(a){return a.activo}).map(function(a){return[a.codigo||'',a.id,a.subcategoria||'',a.categoria||'',a.unidad||'',a.usa_modulo?'SI':'NO'];})
+  ));
+  ws2['!cols']=[{wch:10},{wch:12},{wch:36},{wch:22},{wch:14},{wch:10}];
+  XLSX.utils.book_append_sheet(wb,ws2,'Actividades');
+  // Hoja módulos
+  var ws3=XLSX.utils.aoa_to_sheet([['ModuloID','Nombre','Unidad']].concat(
+    MOD.filter(function(m){return m.activo}).map(function(m){return[m.id,m.nombre,m.unidad];})
+  ));
+  ws3['!cols']=[{wch:14},{wch:24},{wch:14}];
+  XLSX.utils.book_append_sheet(wb,ws3,'Modulos');
+  // Hoja trabajadores
+  var ws4=XLSX.utils.aoa_to_sheet([['Codigo','Nombre','Area']].concat(
+    TRB.filter(function(t){return t.activo}).sort(function(a,b){return a.nombre.localeCompare(b.nombre)}).map(function(t){return[t.codigo,t.nombre,t.area];})
+  ));
+  ws4['!cols']=[{wch:10},{wch:28},{wch:18}];
+  XLSX.utils.book_append_sheet(wb,ws4,'Trabajadores');
+  XLSX.writeFile(wb,'plantilla-asignaciones-'+fechaSel+'.xlsx');
+  toast('✅ Plantilla descargada para '+fechaSel);
+}
+function importarAsgCSV(){
+  var inp=document.createElement('input');inp.type='file';inp.accept='.csv,.xls,.xlsx';
+  inp.onchange=function(ev){
+    var f=ev.target.files[0];if(!f)return;
+    var r=new FileReader();
+    r.onload=function(e){
+      try{
+        var wb=XLSX.read(e.target.result,{type:'array'});
+        var ws=wb.Sheets[wb.SheetNames[0]];
+        var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:''});
+        procesarImportAsg(rows);
+      }catch(err){alert('Error leyendo archivo: '+err.message);}
+    };r.readAsArrayBuffer(f);
+  };inp.click();
+}
+function procesarImportAsg(rows){
+  if(rows.length<2){alert('Archivo vacío.');return;}
+  var header=rows[0].map(function(h){return String(h).toLowerCase().trim();});
+  function col(keys){for(var i=0;i<header.length;i++){for(var j=0;j<keys.length;j++){if(header[i].indexOf(keys[j])>=0)return i;}}return -1;}
+  var cFecha=col(['fecha','date','dia']);
+  var cCod=col(['codigo','code','cod','emp','trabajador']);
+  var cSub=col(['subcategoria','sub','actividad','activity']);
+  var cH=col(['hora','h.reg','hreg','horas','hours']);
+  var cTipo=col(['tipo','type','extra']);
+  var cMods=col(['modulo','module','mod']);
+  var cObs=col(['obs','observ','note']);
+  var cActId=col(['actividadid','act_id','id actividad']);
+  if(cFecha<0||cCod<0){alert('No se encontraron columnas Fecha y Código. Usa la plantilla descargable.');return;}
+  // Mapas rápidos: por nombre, por ID numérico y por código corto
+  var actByName={};var actById={};var actByCod={};
+  ACT.filter(function(a){return a.activo}).forEach(function(a){
+    actByName[(a.subcategoria||'').toLowerCase().trim()]=a;
+    actById[String(a.id)]=a;
+    if(a.codigo)actByCod[a.codigo.toUpperCase()]=a;
+  });
+  var trbByCode={};TRB.forEach(function(t){trbByCode[t.codigo]=t;});
+  var modByNombre={};MOD.filter(function(m){return m.activo}).forEach(function(m){modByNombre[(m.nombre||'').toLowerCase().trim()]=m.id;modByNombre[(m.id||'').toLowerCase().trim()]=m.id;});
+  var nuevas=[],errores=[];
+  for(var i=1;i<rows.length;i++){
+    var row=rows[i];
+    var fecha=String(row[cFecha]||'').trim();
+    var cod=String(row[cCod]||'').trim();
+    var subRaw=cSub>=0?String(row[cSub]||'').trim():'';
+    var hRaw=cH>=0?parseFloat(row[cH])||0:8;
+    var tipo=(cTipo>=0?String(row[cTipo]||'').trim().toUpperCase():'');
+    var x=tipo==='EXTRAS'||tipo==='EXT';
+    var modsRaw=cMods>=0?String(row[cMods]||'').trim():'';
+    var obsRaw=cObs>=0?String(row[cObs]||'').trim():'';
+    var actIdRaw=cActId>=0?String(row[cActId]||'').trim():'';
+    if(!fecha||!cod)continue;
+    var trb=trbByCode[cod];
+    if(!trb){errores.push('Fila '+(i+1)+': código "'+cod+'" no encontrado');continue;}
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){
+      // Intentar convertir número Excel a fecha
+      if(!isNaN(fecha)){var d2=new Date(Math.round((parseFloat(fecha)-25569)*86400*1000));fecha=d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0')+'-'+String(d2.getDate()).padStart(2,'0');}
+      else{errores.push('Fila '+(i+1)+': fecha inválida "'+fecha+'"');continue;}
+    }
+    // Buscar actividad: por código corto → por ID → por nombre exacto → por nombre parcial
+    var act=actByCod[subRaw.toUpperCase()]||actById[actIdRaw]||actByCod[actIdRaw.toUpperCase()]||actByName[subRaw.toLowerCase()];
+    if(!act&&subRaw){
+      var subL=subRaw.toLowerCase();
+      Object.keys(actByName).forEach(function(k){if(!act&&(k.indexOf(subL)>=0||subL.indexOf(k)>=0))act=actByName[k];});
+    }
+    if(!act){errores.push('Fila '+(i+1)+': actividad "'+subRaw+'" no encontrada (usa código corto, ID numérico o nombre)');continue;}
+    // Resolver módulos
+    var mods=[];
+    if(modsRaw){
+      modsRaw.split(/,|;/).forEach(function(m){
+        var mt=m.trim();
+        var mid=modByNombre[mt.toLowerCase()]||mt;
+        if(mid)mods.push(mid);
+      });
+    }
+    nuevas.push({fecha:fecha,trb:trb,act:act,h:hRaw||8,x:x,mods:mods,obs:obsRaw});
+  }
+  if(!nuevas.length){
+    var msg='No se encontraron filas válidas.';
+    if(errores.length)msg+='\n\nErrores:\n'+errores.slice(0,10).join('\n');
+    alert(msg);return;
+  }
+  // Preview modal
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:760px;width:97%">';
+  mh+='<h2>📥 Importar Asignaciones — Preview</h2>';
+  if(errores.length)mh+='<div class="alert al-w" style="font-size:11px;margin-bottom:8px"><b>⚠ '+errores.length+' filas omitidas:</b><br>'+errores.slice(0,5).join('<br>')+(errores.length>5?'<br>...y '+(errores.length-5)+' más':'')+'</div>';
+  mh+='<p style="font-size:12px;color:#4a5568;margin-bottom:8px"><b>'+nuevas.length+'</b> asignaciones listas. Se agregarán a Tab 1 como asignaciones pendientes de consolidar.</p>';
+  mh+='<div style="overflow-x:auto;max-height:360px"><table style="width:100%;border-collapse:collapse;font-size:11px">';
+  mh+='<thead style="position:sticky;top:0"><tr style="background:#edf2f7"><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Fecha</th><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Trabajador</th><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Área</th><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Actividad</th><th style="padding:5px 8px;text-align:center;border-bottom:2px solid #e2e8f0">Horas</th><th style="padding:5px 8px;text-align:center;border-bottom:2px solid #e2e8f0">Tipo</th><th style="padding:5px 8px;text-align:left;border-bottom:2px solid #e2e8f0">Módulos</th></tr></thead><tbody>';
+  nuevas.forEach(function(a){
+    var tpCol=a.x?'color:#92400e;background:#fef3c7':'color:#276749;background:#f0fff4';
+    mh+='<tr style="border-bottom:1px solid #e2e8f0">';
+    mh+='<td style="padding:4px 8px;white-space:nowrap">'+a.fecha+'</td>';
+    mh+='<td style="padding:4px 8px">'+a.trb.nombre+'</td>';
+    mh+='<td style="padding:4px 8px;color:#718096;font-size:10px">'+a.trb.area+'</td>';
+    mh+='<td style="padding:4px 8px">'+a.act.subcategoria+'</td>';
+    mh+='<td style="padding:4px 8px;text-align:center;font-weight:700">'+a.h+'h</td>';
+    mh+='<td style="padding:4px 8px;text-align:center"><span style="font-size:10px;padding:1px 6px;border-radius:4px;'+tpCol+'">'+(a.x?'EXTRAS':'NORMAL')+'</span></td>';
+    mh+='<td style="padding:4px 8px;font-size:10px;color:#718096">'+a.mods.join(', ')+'</td>';
+    mh+='</tr>';
+  });
+  mh+='</tbody></table></div>';
+  mh+='<div style="display:flex;gap:8px;margin-top:14px">';
+  mh+='<button class="btn btn-s" onclick="confirmarImportAsg(window._asgPreview)">✅ Cargar asignaciones</button>';
+  mh+='<button class="btn btn-d" onclick="cerrarModal()">Cancelar</button>';
+  mh+='</div></div></div>';
+  window._asgPreview=nuevas;
+  document.getElementById('modalContainer').innerHTML=mh;
+}
+function confirmarImportAsg(nuevas){
+  if(!nuevas||!nuevas.length)return;
+  var cnt=0,dup=0;
+  nuevas.forEach(function(a){
+    var existe=asg.find(function(x){return x.f===a.fecha&&x.w===a.trb.codigo&&String(x.act)===String(a.act.id)&&!x.na;});
+    if(existe){dup++;return;}
+    asg.push({f:a.fecha,w:a.trb.codigo,act:a.act.id,uni:a.act.unidad||'',h:a.h,x:a.x,mods:a.mods,na:false,mt:'',obs:a.obs,rend:null});
+    cnt++;
+  });
+  cerrarModal();guardarLS();stats();renderT1();
+  toast('✅ '+cnt+' asignaciones cargadas'+(dup?' ('+dup+' duplicadas omitidas)':''));
+  window._asgPreview=null;
+}
 function modalAsignacionMasiva(){
   if(!soloAdmin())return;
   var areas={};
