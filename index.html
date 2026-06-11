@@ -213,6 +213,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div style="display:flex;gap:0;margin-bottom:16px;border-bottom:2px solid #e2e8f0">
   <button id="st4_consol_btn" onclick="swSubT4('consol')" style="background:#fff;border:2px solid #e2e8f0;border-bottom:2px solid #fff;color:#2b6cb0;font-weight:700;padding:9px 22px;border-radius:8px 8px 0 0;margin-bottom:-2px;cursor:pointer;font-size:13px">📊 Consolidado</button>
   <button id="st4_trb_btn" onclick="swSubT4('trb')" style="background:#f7fafc;border:2px solid transparent;border-bottom:none;color:#718096;padding:9px 22px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px">👤 Consulta Trabajador</button>
+  <button id="st4_act_btn" onclick="swSubT4('act')" style="background:#f7fafc;border:2px solid transparent;border-bottom:none;color:#718096;padding:9px 22px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px">🗂️ Por Actividad</button>
   <button id="st4_plan_btn" onclick="swSubT4('plan')" style="background:#f7fafc;border:2px solid transparent;border-bottom:none;color:#718096;padding:9px 22px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px">📋 Asignaciones</button>
 </div>
 
@@ -229,6 +230,22 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     </div>
   </div>
   <div id="rptTrbBody"><p style="color:#a0aec0;font-size:12px;padding:8px">Selecciona un trabajador y rango de fechas.</p></div>
+</div>
+</div>
+
+<!-- Panel: Por Actividad -->
+<div id="st4_act_body" style="display:none">
+<div class="card">
+  <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+    <h2 style="margin:0">🗂️ Por Actividad</h2>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;align-items:center">
+      <input type="date" id="rptActFecha" style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px" onchange="renderRptAct()">
+      <select id="rptActUni" onchange="renderRptAct()" style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px"><option value="">Todas las unidades</option></select>
+      <input type="text" id="rptActBusq" placeholder="🔍 Buscar actividad..." oninput="renderRptAct()" style="padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px">
+      <button class="btn btn-sm" style="background:#2b6cb0;color:#fff;font-size:11px" onclick="imprimirRptAct()">🖨️ Imprimir</button>
+    </div>
+  </div>
+  <div id="rptActBody"><p style="color:#a0aec0;font-size:12px">Cargando...</p></div>
 </div>
 </div>
 
@@ -1380,8 +1397,8 @@ function imprimirRptTrb(){
   w.document.close();w.focus();setTimeout(function(){w.print();},400);
 }
 function swSubT4(id){
-  var panels={consol:'st4_consol_body',trb:'st4_trb_body',plan:'st4_plan_body'};
-  var btns={consol:'st4_consol_btn',trb:'st4_trb_btn',plan:'st4_plan_btn'};
+  var panels={consol:'st4_consol_body',trb:'st4_trb_body',act:'st4_act_body',plan:'st4_plan_body'};
+  var btns={consol:'st4_consol_btn',trb:'st4_trb_btn',act:'st4_act_btn',plan:'st4_plan_btn'};
   var actSt='background:#fff;border:2px solid #e2e8f0;border-bottom:2px solid #fff;color:#2b6cb0;font-weight:700;padding:9px 22px;border-radius:8px 8px 0 0;margin-bottom:-2px;cursor:pointer;font-size:13px';
   var inactSt='background:#f7fafc;border:2px solid transparent;border-bottom:none;color:#718096;padding:9px 22px;border-radius:8px 8px 0 0;cursor:pointer;font-size:13px';
   for(var k in panels){
@@ -1391,6 +1408,7 @@ function swSubT4(id){
   }
   if(id==='consol'){renderT4();setRangoExp('todo');updExpInfo();}
   if(id==='trb'){inicRptTrb();}
+  if(id==='act'){renderRptAct();}
   if(id==='plan'){renderPlanDia();}
 }
 function swTab(id,btn){
@@ -3672,97 +3690,123 @@ function modalAsignacionMasiva(){
     if(!areas[t.area])areas[t.area]=[];
     areas[t.area].push(t);
   });
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:860px;width:98%;max-height:92vh">';
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:920px;width:98%;max-height:92vh;overflow:auto">';
   mh+='<h2>👥 Asignación Masiva</h2>';
-  mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">Asigna la misma actividad y módulos a varios trabajadores a la vez.</p>';
-  // Fecha
-  mh+='<div class="fg"><label>Fecha</label><input type="date" id="amFecha" value="'+fechaSel+'"></div>';
-  // Layout de 2 columnas: Trabajadores | Actividad + config
-  mh+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start">';
+  mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">1️⃣ Elige fecha y actividad &nbsp;→&nbsp; 2️⃣ Define horas/tipo por defecto y módulos &nbsp;→&nbsp; 3️⃣ Marca trabajadores (puedes ajustar las horas de cada uno).</p>';
 
-  // ---- Columna izquierda: Trabajadores ----
-  mh+='<div>';
-  mh+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:5px">';
-  mh+='<label style="font-weight:600;font-size:12px;margin:0">Trabajadores</label>';
-  mh+='<select id="amAreaFlt" onchange="amFiltrarArea()" style="font-size:10px;padding:2px 6px;border-radius:4px;border:1px solid #cbd5e0;color:#4a5568"><option value="">Todas las áreas</option>';
-  for(var area in areas){mh+='<option value="'+area+'">'+area+'</option>';}
-  mh+='</select>';
-  mh+='<button type="button" class="btn btn-sm" style="background:#ebf8ff;color:#2b6cb0;font-size:10px;padding:2px 7px" onclick="amSelAll()">Todos</button>';
-  mh+='<button type="button" class="btn btn-sm" style="background:#fff5f5;color:#c53030;font-size:10px;padding:2px 7px" onclick="amDeselAll()">Ninguno</button>';
+  // ---- PASO 1: Fecha + Actividad + valores por defecto ----
+  mh+='<div style="background:#eff6ff;border:2px solid #bfdbfe;border-radius:10px;padding:14px;margin-bottom:14px">';
+  mh+='<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:10px">';
+  mh+='<div class="fg" style="margin:0;min-width:140px"><label>📅 Fecha</label><input type="date" id="amFecha" value="'+fechaSel+'"></div>';
+  mh+='<div class="fg" style="margin:0;min-width:120px"><label>⏱ Horas (por defecto)</label><input type="number" id="amH" value="8" min="0.5" max="24" step="0.5" onchange="amAplicarDefaults()"></div>';
+  mh+='<div class="fg" style="margin:0;min-width:120px"><label>Tipo (por defecto)</label><select id="amTipo" onchange="amAplicarDefaults()"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
   mh+='</div>';
-  mh+='<input type="text" id="amBusqTrb" placeholder="🔍 Buscar trabajador..." oninput="amBuscarTrb()" style="width:100%;padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;margin-bottom:5px;box-sizing:border-box">';
-  mh+='<div style="height:340px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:6px;padding:8px;background:#fafafa">';
-  for(var area in areas){
-    mh+='<div class="am-area-grp" data-area="'+area+'">';
-    mh+='<div style="font-size:10px;font-weight:700;color:#667eea;background:#eff6ff;padding:3px 6px;border-radius:4px;margin:6px 0 3px;position:sticky;top:0">'+area+'</div>';
-    areas[area].forEach(function(t){
-      var yaAsig=asg.some(function(a){return a.f===fechaSel&&a.w===t.codigo&&!a.na});
-      mh+='<div class="cbi"><input type="checkbox" class="am-trb" value="'+t.codigo+'">';
-      mh+='<label style="font-size:12px;'+(yaAsig?'color:#276749;font-weight:600':'')+'">';
-      mh+=t.nombre+(yaAsig?' ✓':'')+'</label></div>';
-    });
-    mh+='</div>';
-  }
-  mh+='</div>';
-  mh+='</div>';
-
-  // ---- Columna derecha: Actividad + config ----
-  mh+='<div style="display:flex;flex-direction:column;gap:10px">';
-  mh+='<div>';
-  mh+='<label style="font-weight:600;font-size:12px;display:block;margin-bottom:5px">Actividad</label>';
-  mh+='<input type="text" id="amBusqAct" placeholder="🔍 Buscar actividad..." oninput="amBuscarAct()" style="width:100%;padding:5px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;margin-bottom:4px;box-sizing:border-box">';
-  mh+='<select id="amAct" onchange="amCambioAct()" size="8" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
+  mh+='<div class="fg" style="margin:0 0 10px"><label style="font-size:13px">🎯 Actividad (selecciona 1)</label>';
+  mh+='<input type="text" id="amBusqAct" placeholder="🔍 Buscar actividad por nombre, código, categoría o unidad..." oninput="amBuscarAct()" style="margin-bottom:4px">';
+  mh+='<select id="amAct" onchange="amCambioAct()" size="6" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
   mh+='<option value="">-- Selecciona actividad --</option>';
   var lastUni='';
   ACT.filter(function(a){return a.activo}).forEach(function(a){
     if(a.unidad!==lastUni){mh+='<optgroup label="'+a.unidad+'">';lastUni=a.unidad;}
-    mh+='<option value="'+a.id+'">'+a.subcategoria+'</option>';
+    mh+='<option value="'+a.id+'">'+(a.codigo?'['+a.codigo+'] ':'')+a.subcategoria+'</option>';
   });
   mh+='</select>';
   mh+='</div>';
-
-  // Horas y tipo
-  mh+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
-  mh+='<div class="fg" style="margin:0"><label>Horas por trabajador</label><input type="number" id="amH" value="8" min="0.5" max="24" step="0.5"></div>';
-  mh+='<div class="fg" style="margin:0"><label>Tipo</label><select id="amTipo"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
-  mh+='</div>';
-
   // Módulos
-  mh+='<div class="fg" style="margin:0"><label>Módulos';
-  mh+=' <button type="button" class="btn btn-sm" style="background:#edf2f7;font-size:10px" onclick="amSelAllMods()">Sel. todos</button>';
+  mh+='<div class="fg" style="margin:0"><label>📦 Módulos para esta actividad';
+  mh+=' <button type="button" class="btn btn-sm" style="background:#fff;font-size:10px" onclick="amSelAllMods()">Sel. todos</button>';
   mh+=' <button type="button" class="btn btn-sm" style="background:#fff5f5;color:#c53030;font-size:10px" onclick="amDeselMods()">Ninguno</button>';
   mh+='</label>';
-  mh+='<div class="modbox" id="amMods"><p style="font-size:11px;color:#a0aec0">Selecciona una actividad para ver módulos</p></div>';
+  mh+='<div class="modbox" id="amMods" style="background:#fff"><p style="font-size:11px;color:#a0aec0">Selecciona una actividad para ver módulos</p></div>';
   mh+='</div>';
-  mh+='</div>'; // fin columna derecha
-  mh+='</div>'; // fin grid
-  // Horas y tipo
-  mh+='<div class="grid-2">';
-  mh+='<div class="fg"><label>Horas por trabajador</label><input type="number" id="amH" value="8" min="0.5" max="24" step="0.5"></div>';
-  mh+='<div class="fg"><label>Tipo</label><select id="amTipo"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
+  mh+='</div>'; // fin paso 1
+
+  // ---- PASO 2: Trabajadores ----
+  mh+='<div style="display:flex;align-items:center;flex-wrap:wrap;gap:6px;margin-bottom:8px">';
+  mh+='<label style="font-weight:700;font-size:13px;margin:0;color:#2d3748">👥 Trabajadores</label>';
+  mh+='<select id="amAreaFlt" onchange="amBuscarTrb()" style="font-size:11px;padding:4px 8px;border-radius:5px;border:1px solid #cbd5e0;color:#4a5568"><option value="">Todas las áreas</option>';
+  for(var area in areas){mh+='<option value="'+area+'">'+area+'</option>';}
+  mh+='</select>';
+  mh+='<input type="text" id="amBusqTrb" placeholder="🔍 Buscar trabajador..." oninput="amBuscarTrb()" style="flex:1;min-width:160px;padding:6px 8px;border:1.5px solid #e2e8f0;border-radius:6px;font-size:12px;box-sizing:border-box">';
+  mh+='<button type="button" class="btn btn-sm" style="background:#ebf8ff;color:#2b6cb0;font-size:11px" onclick="amSelAll()">☑ Todos</button>';
+  mh+='<button type="button" class="btn btn-sm" style="background:#fff5f5;color:#c53030;font-size:11px" onclick="amDeselAll()">☐ Ninguno</button>';
+  mh+='<span id="amCount" style="font-size:11px;color:#718096;margin-left:auto;white-space:nowrap">0 seleccionados</span>';
   mh+='</div>';
+
+  mh+='<div style="max-height:360px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px">';
+  mh+='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0;background:#f7fafc;z-index:1"><tr>';
+  mh+='<th style="width:34px;padding:6px"></th><th style="text-align:left;padding:6px">Trabajador</th><th style="text-align:left;padding:6px">Área</th><th style="width:90px;padding:6px">Horas</th><th style="width:110px;padding:6px">Tipo</th></tr></thead><tbody id="amTbody">';
+  for(var area in areas){
+    mh+='<tr class="am-area-hdr" data-area="'+area+'"><td colspan="5" style="background:#eff6ff;font-weight:700;color:#2b6cb0;padding:4px 10px;font-size:11px;letter-spacing:.4px">'+area+'</td></tr>';
+    areas[area].forEach(function(t){
+      var yaAsig=asg.some(function(a){return a.f===fechaSel&&a.w===t.codigo&&!a.na});
+      mh+='<tr class="am-row" data-area="'+area+'" data-name="'+t.nombre.toLowerCase()+'">';
+      mh+='<td style="text-align:center;padding:4px"><input type="checkbox" class="am-trb" value="'+t.codigo+'" onchange="amToggleRow(this)"></td>';
+      mh+='<td style="padding:4px'+(yaAsig?';color:#276749;font-weight:600':'')+'">'+t.nombre+(yaAsig?' ✓':'')+'</td>';
+      mh+='<td style="padding:4px;color:#718096;font-size:11px">'+area+'</td>';
+      mh+='<td style="padding:4px"><input type="number" class="am-h" min="0.5" max="24" step="0.5" disabled style="width:64px;padding:3px 5px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:12px"></td>';
+      mh+='<td style="padding:4px"><select class="am-row-tipo" disabled style="width:100%;padding:3px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:12px"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></td>';
+      mh+='</tr>';
+    });
+  }
+  mh+='</tbody></table></div>';
+
   mh+='<div style="display:flex;gap:6px;margin-top:14px">';
   mh+='<button class="btn btn-s" onclick="doAsignacionMasiva()">✅ Crear asignaciones</button>';
   mh+='<button class="btn btn-d" onclick="cerrarModal()">Cancelar</button>';
   mh+='</div></div></div>';
   document.getElementById('modalContainer').innerHTML=mh;
+  amActualizarCount();
 }
-function amSelAll(){document.querySelectorAll('.am-trb').forEach(function(c){c.checked=true});}
-function amDeselAll(){document.querySelectorAll('.am-trb').forEach(function(c){c.checked=false});}
+function amSelAll(){
+  document.querySelectorAll('#amTbody tr.am-row').forEach(function(tr){
+    if(tr.style.display==='none')return;
+    var c=tr.querySelector('.am-trb');
+    if(!c.checked){c.checked=true;amToggleRow(c);}
+  });
+}
+function amDeselAll(){
+  document.querySelectorAll('.am-trb').forEach(function(c){if(c.checked){c.checked=false;amToggleRow(c);}});
+}
+function amToggleRow(chk){
+  var tr=chk.closest('tr');
+  var hInp=tr.querySelector('.am-h'),tInp=tr.querySelector('.am-row-tipo');
+  hInp.disabled=!chk.checked;tInp.disabled=!chk.checked;
+  if(chk.checked){
+    if(!hInp.value)hInp.value=document.getElementById('amH').value||8;
+    tInp.value=document.getElementById('amTipo').value||'NORMAL';
+    tr.style.background='#f0fff4';
+  }else{
+    tr.style.background='';
+  }
+  amActualizarCount();
+}
+function amActualizarCount(){
+  var n=document.querySelectorAll('.am-trb:checked').length;
+  var el=document.getElementById('amCount');
+  if(el)el.textContent=n+(n===1?' seleccionado':' seleccionados');
+}
+function amAplicarDefaults(){
+  var h=document.getElementById('amH').value||8;
+  var tipo=document.getElementById('amTipo').value||'NORMAL';
+  document.querySelectorAll('.am-trb:checked').forEach(function(c){
+    var tr=c.closest('tr');
+    tr.querySelector('.am-h').value=h;
+    tr.querySelector('.am-row-tipo').value=tipo;
+  });
+}
 function amBuscarTrb(){
   var q=(document.getElementById('amBusqTrb').value||'').toLowerCase();
-  document.querySelectorAll('.am-area-grp').forEach(function(grp){
-    var vis=0;
-    grp.querySelectorAll('.cbi').forEach(function(cbi){
-      var lbl=cbi.querySelector('label');
-      var match=!q||(lbl&&lbl.textContent.toLowerCase().indexOf(q)>=0);
-      cbi.style.display=match?'':'none';
-      if(match)vis++;
-    });
-    // Ocultar grupo entero si ningún trabajador coincide (respetando filtro de área)
-    var areaFlt=document.getElementById('amAreaFlt')?document.getElementById('amAreaFlt').value:'';
-    var areaOk=!areaFlt||grp.dataset.area===areaFlt;
-    grp.style.display=(vis>0&&areaOk)?'':'none';
+  var areaFlt=document.getElementById('amAreaFlt')?document.getElementById('amAreaFlt').value:'';
+  var visPorArea={};
+  document.querySelectorAll('#amTbody tr.am-row').forEach(function(tr){
+    var area=tr.dataset.area,name=tr.dataset.name||'';
+    var match=(!q||name.indexOf(q)>=0)&&(!areaFlt||area===areaFlt);
+    tr.style.display=match?'':'none';
+    if(match)visPorArea[area]=(visPorArea[area]||0)+1;
+  });
+  document.querySelectorAll('#amTbody tr.am-area-hdr').forEach(function(tr){
+    tr.style.display=visPorArea[tr.dataset.area]?'':'none';
   });
 }
 function amBuscarAct(){
@@ -3772,15 +3816,11 @@ function amBuscarAct(){
   sel.innerHTML='<option value="">-- Selecciona actividad --</option>';
   var lastUni='';
   ACT.filter(function(a){return a.activo}).forEach(function(a){
-    var match=!q||(a.subcategoria&&a.subcategoria.toLowerCase().indexOf(q)>=0)||(a.categoria&&a.categoria.toLowerCase().indexOf(q)>=0)||(a.unidad&&a.unidad.toLowerCase().indexOf(q)>=0);
+    var match=!q||(a.subcategoria&&a.subcategoria.toLowerCase().indexOf(q)>=0)||(a.categoria&&a.categoria.toLowerCase().indexOf(q)>=0)||(a.unidad&&a.unidad.toLowerCase().indexOf(q)>=0)||(a.codigo&&a.codigo.toLowerCase().indexOf(q)>=0);
     if(!match)return;
     if(a.unidad!==lastUni){sel.innerHTML+='<optgroup label="'+a.unidad+'">';lastUni=a.unidad;}
-    sel.innerHTML+='<option value="'+a.id+'"'+(a.id==prev?' selected':'')+'>'+a.subcategoria+'</option>';
+    sel.innerHTML+='<option value="'+a.id+'"'+(a.id==prev?' selected':'')+'>'+(a.codigo?'['+a.codigo+'] ':'')+a.subcategoria+'</option>';
   });
-}
-function amFiltrarArea(){
-  // Delegar en amBuscarTrb que ya combina área + texto
-  amBuscarTrb();
 }
 function amSelAllMods(){
   var cbs=document.querySelectorAll('#amMods input[type=checkbox]');
@@ -3805,17 +3845,17 @@ function amCambioAct(){
 function doAsignacionMasiva(){
   var fecha=document.getElementById('amFecha').value;
   var actId=document.getElementById('amAct').value;
-  var h=parseFloat(document.getElementById('amH').value)||8;
-  var esExtra=document.getElementById('amTipo').value==='EXTRAS';
   var mods=[].slice.call(document.querySelectorAll('#amMods input:checked')).map(function(c){return c.value});
-  var trabajadores=[].slice.call(document.querySelectorAll('.am-trb:checked')).map(function(c){return c.value});
   if(!fecha){alert('Selecciona una fecha');return;}
   if(!actId){alert('Selecciona una actividad');return;}
-  if(!trabajadores.length){alert('Selecciona al menos un trabajador');return;}
+  var filas=[].slice.call(document.querySelectorAll('#amTbody tr.am-row')).filter(function(tr){return tr.querySelector('.am-trb').checked;});
+  if(!filas.length){alert('Selecciona al menos un trabajador');return;}
   var act=ACT.find(function(a){return a.id===actId});
-  var trb0=TRB.find(function(t){return t.codigo===trabajadores[0]});
   var nuevos=0,actualizados=0;
-  trabajadores.forEach(function(cod){
+  filas.forEach(function(tr){
+    var cod=tr.querySelector('.am-trb').value;
+    var h=parseFloat(tr.querySelector('.am-h').value)||8;
+    var esExtra=tr.querySelector('.am-row-tipo').value==='EXTRAS';
     var trb=TRB.find(function(t){return t.codigo===cod});if(!trb)return;
     var existing=asg.find(function(a){return a.f===fecha&&a.w===cod&&a.act===actId&&!a.na});
     if(existing){
@@ -3925,6 +3965,114 @@ function eliminarIna(f,w){
   toast('✅ Inasistencia eliminada');
 }
 // === PLAN DEL DIA ===
+function renderRptAct(){
+  var elF=document.getElementById('rptActFecha');if(!elF)return;
+  if(!elF.value){
+    if(fechaSel)elF.value=fechaSel;
+    else{var h=new Date();elF.value=h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0')+'-'+String(h.getDate()).padStart(2,'0');}
+  }
+  var fecha=elF.value;
+  var selUni=document.getElementById('rptActUni');
+  if(selUni&&selUni.options.length<=1){
+    UNI.filter(function(u){return u.activo}).forEach(function(u){var o=document.createElement('option');o.value=u.id;o.textContent=u.nombre;selUni.appendChild(o)});
+  }
+  var uniFlt=selUni?selUni.value:'';
+  var qEl=document.getElementById('rptActBusq');
+  var q=qEl?qEl.value.toLowerCase():'';
+  var body=document.getElementById('rptActBody');if(!body)return;
+
+  // Recolectar trabajo del día: preferir reg (consolidado); si no existe, usar asg (planificado)
+  var items=[];
+  var keysReg={};
+  reg.filter(function(r){return r.f===fecha}).forEach(function(r){
+    keysReg[r.w+'|'+r.act]=true;
+    var act=ACT.find(function(x){return String(x.id)===String(r.act)});
+    items.push({w:r.w,act:r.act,uni:r.uni||(act?act.unidad:''),cat:r.cat||(act?act.categoria:''),sub:r.sub||(act?act.subcategoria:''),
+      h:r.hr,tp:r.tp,mods:r.mods||[],rend:r.rend,ind:r.ind||(act?act.indicador:''),fuente:'reg'});
+  });
+  asg.filter(function(a){return a.f===fecha&&!a.na}).forEach(function(a){
+    if(keysReg[a.w+'|'+a.act])return;
+    var act=ACT.find(function(x){return String(x.id)===String(a.act)});
+    items.push({w:a.w,act:a.act,uni:a.uni||(act?act.unidad:''),cat:a.cat||(act?act.categoria:''),sub:a.sub||(act?act.subcategoria:''),
+      h:a.h,tp:a.x?'EXTRAS':'NORMAL',mods:a.mods||[],rend:a.rend,ind:act?act.indicador:'',fuente:'asg'});
+  });
+
+  // Agrupar por actividad
+  var grupos={};
+  items.forEach(function(it){
+    if(uniFlt&&it.uni!==uniFlt)return;
+    if(q&&!((it.sub||'').toLowerCase().indexOf(q)>=0||(it.cat||'').toLowerCase().indexOf(q)>=0))return;
+    var key=it.act;
+    if(!grupos[key])grupos[key]={sub:it.sub,cat:it.cat,uni:it.uni,items:[]};
+    grupos[key].items.push(it);
+  });
+
+  var keys=Object.keys(grupos).sort(function(a,b){
+    return (grupos[a].sub||'').localeCompare(grupos[b].sub||'');
+  });
+
+  if(!keys.length){body.innerHTML='<p style="color:#a0aec0;font-size:12px">No hay actividades registradas para esta fecha.</p>';return;}
+
+  var totalPersonas=0,totalActividades=keys.length,totalHoras=0,html='';
+  keys.forEach(function(key){
+    var g=grupos[key];
+    var horasAct=0;
+    g.items.forEach(function(it){horasAct+=parseFloat(it.h)||0;});
+    totalHoras+=horasAct;totalPersonas+=g.items.length;
+    html+='<div style="margin-bottom:18px">';
+    html+='<div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px;background:linear-gradient(135deg,#667eea,#764ba2);padding:6px 12px;border-radius:6px;margin-bottom:6px">';
+    html+='<span style="font-size:12px;font-weight:700;color:#fff;letter-spacing:.4px">'+(g.sub||'—')+' <span style="font-weight:400;opacity:.85">('+(g.uni||'')+(g.cat?' · '+g.cat:'')+')</span></span>';
+    html+='<span style="font-size:11px;color:#fff;background:rgba(255,255,255,.2);border-radius:10px;padding:2px 10px">'+g.items.length+' persona'+(g.items.length===1?'':'s')+' · '+horasAct.toFixed(1)+'h</span>';
+    html+='</div>';
+    html+='<table><thead><tr><th>Trabajador</th><th>Área</th><th>Módulo(s)</th><th style="text-align:center">Horas</th><th style="text-align:center">Tipo</th><th style="text-align:center">Rendimiento</th></tr></thead><tbody>';
+    g.items.sort(function(a,b){
+      var ta=TRB.find(function(t){return t.codigo===a.w});var tb=TRB.find(function(t){return t.codigo===b.w});
+      return (ta?ta.nombre:a.w).localeCompare(tb?tb.nombre:b.w);
+    }).forEach(function(it){
+      var trb=TRB.find(function(t){return t.codigo===it.w});
+      var modsTxt=(it.mods&&it.mods.length)?it.mods.map(function(mid){var m=MOD.find(function(x){return x.id===mid});return m?m.nombre:mid}).join(', '):'—';
+      var rendTxt=(it.rend!=null&&it.rend!=='')?it.rend+(it.ind?' '+it.ind:''):'—';
+      html+='<tr>';
+      html+='<td style="font-weight:600">'+(trb?trb.nombre:it.w)+'</td>';
+      html+='<td style="color:#718096;font-size:11px">'+(trb?trb.area:'')+'</td>';
+      html+='<td style="color:#718096;font-size:11px">'+modsTxt+'</td>';
+      html+='<td style="text-align:center;font-weight:600">'+(parseFloat(it.h)||0).toFixed(1)+'</td>';
+      html+='<td style="text-align:center"><span style="font-size:10px;padding:2px 7px;border-radius:10px;background:'+(it.tp==='EXTRAS'?'#fef3c7':'#f0fff4')+';color:'+(it.tp==='EXTRAS'?'#92400e':'#276749')+'">'+(it.tp==='EXTRAS'?'EXTRA':'NORMAL')+'</span></td>';
+      html+='<td style="text-align:center;color:#4a5568">'+rendTxt+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div>';
+  });
+
+  var resumen='<div style="display:flex;gap:10px;margin-bottom:16px;flex-wrap:wrap">';
+  resumen+='<div style="background:#ebf8ff;border-radius:8px;padding:8px 16px;font-size:12px;text-align:center"><b style="font-size:20px;color:#2b6cb0;display:block">'+totalActividades+'</b>Actividades</div>';
+  resumen+='<div style="background:#f0fff4;border-radius:8px;padding:8px 16px;font-size:12px;text-align:center"><b style="font-size:20px;color:#276749;display:block">'+totalPersonas+'</b>Personas asignadas</div>';
+  resumen+='<div style="background:#fffaf0;border-radius:8px;padding:8px 16px;font-size:12px;text-align:center"><b style="font-size:20px;color:#92400e;display:block">'+totalHoras.toFixed(1)+'</b>Horas totales</div>';
+  resumen+='</div>';
+  body.innerHTML=resumen+html;
+}
+function imprimirRptAct(){
+  var fecha=document.getElementById('rptActFecha')?document.getElementById('rptActFecha').value:'';
+  var body=document.getElementById('rptActBody');
+  if(!body||!fecha){alert('Selecciona una fecha primero');return;}
+  var win=window.open('','_blank','width=900,height=700');
+  win.document.write('<html><head><meta charset="utf-8"><title>Por Actividad '+fecha+'</title>');
+  win.document.write('<style>body{font-family:Arial,sans-serif;font-size:12px;color:#2d3748;padding:24px;max-width:900px;margin:0 auto}');
+  win.document.write('h1{font-size:18px;margin:0 0 4px}p.sub{color:#718096;font-size:11px;margin:0 0 18px}');
+  win.document.write('table{width:100%;border-collapse:collapse;margin-bottom:16px;font-size:12px}');
+  win.document.write('th{background:#f7fafc;padding:6px 8px;text-align:left;border-bottom:2px solid #e2e8f0;font-size:11px;text-transform:uppercase}');
+  win.document.write('td{padding:5px 8px;border-bottom:1px solid #f0f0f0}');
+  win.document.write('.res{display:flex;gap:10px;margin-bottom:18px}.res-box{border-radius:8px;padding:8px 16px;font-size:12px;text-align:center}');
+  win.document.write('.res-box b{font-size:20px;display:block}');
+  win.document.write('@media print{button{display:none!important}}');
+  win.document.write('</style></head><body>');
+  win.document.write('<h1>🗂️ Reporte por Actividad — '+fecha+'</h1>');
+  win.document.write('<p class="sub">Generado: '+new Date().toLocaleString()+'</p>');
+  win.document.write(body.innerHTML);
+  win.document.write('<script>window.onload=function(){window.print()}<\/script>');
+  win.document.write('</body></html>');
+  win.document.close();
+}
 function renderPlanDia(){
   var el=document.getElementById('rptFecha');if(!el)return;
   if(!el.value){
