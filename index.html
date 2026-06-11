@@ -3578,18 +3578,26 @@ function importarAsgCSV(){
 }
 function procesarImportAsg(rows){
   if(rows.length<2){alert('Archivo vacío.');return;}
-  var header=rows[0].map(function(h){return String(h).toLowerCase().trim();});
+  function normH(s){return String(s).toLowerCase().trim()
+    .replace(/[.\s_]/g,'')
+    .replace(/[áàâä]/g,'a').replace(/[éèêë]/g,'e').replace(/[íìîï]/g,'i')
+    .replace(/[óòôö]/g,'o').replace(/[úùûü]/g,'u').replace(/ñ/g,'n');}
+  var header=rows[0].map(normH);
   function col(keys){for(var i=0;i<header.length;i++){for(var j=0;j<keys.length;j++){if(header[i].indexOf(keys[j])>=0)return i;}}return -1;}
   var cFecha=col(['fecha','date','dia']);
-  var cCod=col(['codigo','code','cod','emp','trabajador']);
+  var cCod=col(['codigo','code','cod','emp']);
   var cSub=col(['subcategoria','sub','actividad','activity']);
-  var cH=col(['hora','h.reg','hreg','horas','hours']);
+  var cH=col(['horasasig','hasig','hreg','horas','hours','hora']);
   var cTipo=col(['tipo','type','extra']);
   var cMods=col(['modulo','module','mod']);
-  var cObs=col(['obs','observ','note']);
-  var cRef=col(['ref','referencia','reference','lote','op']);
-  var cActId=col(['actividadid','act_id','id actividad']);
-  if(cFecha<0||cCod<0){alert('No se encontraron columnas Fecha y Código. Usa la plantilla descargable.');return;}
+  var cObs=col(['observ','obs','note']);
+  var cRef=col(['referencia','ref','reference','lote','op']);
+  var cActId=col(['actividadid','actid','idactividad']);
+  if(cFecha<0||cCod<0){
+    var cNomFb=col(['trabajador','nombre','name','worker']);
+    if(cNomFb>=0&&cCod<0){alert('No se encontró la columna "Código". Usa la plantilla descargable y asegúrate de incluir la columna Código del trabajador.');return;}
+    alert('No se encontraron columnas Fecha y Código. Usa la plantilla descargable.');return;
+  }
   // Mapas rápidos: por nombre, por ID numérico y por código corto
   var actByName={};var actById={};var actByCod={};
   ACT.filter(function(a){return a.activo}).forEach(function(a){
