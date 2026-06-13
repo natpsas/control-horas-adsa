@@ -179,6 +179,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="alert al-i"><b>Asignación Matutina</b> — Plan del día. Agrega actividades con +. Ajustes finales en Consolidación.</div>
 <div class="card"><h2>Asignación de Actividades</h2>
 <div class="fb"><input type="text" id="srcW" placeholder="🔍 Buscar..." oninput="renderT1()"><select id="fltA" onchange="renderT1()"><option value="">Todas las áreas</option></select>
+<select id="fltEstadoT1" onchange="renderT1()"><option value="">Todos los estados</option><option value="sin">⚠️ Sin actividad asignada</option><option value="asignado">📋 Asignados (pendiente)</option><option value="consol">⏳ Consolidados</option><option value="aprobado">✅ Aprobados</option><option value="na">🚫 Inasistencias</option></select>
 <button class="btn btn-s btn-sm" onclick="guardarAsignaciones()">💾 Guardar</button><button id="btnAsigMasiva" class="btn btn-p btn-sm" onclick="modalAsignacionMasiva()" style="display:none" title="Asignar la misma actividad a varios trabajadores a la vez">👥 Asig. Masiva</button><button id="btnImpAsg" class="btn btn-sm" onclick="importarAsgCSV()" style="display:none;background:#553c9a;color:#fff;border:none" title="Importar asignaciones desde Excel/CSV">📥 Importar CSV</button><button id="btnPlantAsg" class="btn btn-sm" onclick="descargarPlantillaAsg()" style="display:none;background:#744210;color:#fff;border:none" title="Descargar plantilla Excel para importar asignaciones">📋 Plantilla</button></div>
 <div id="t1List"></div>
 <button class="btn btn-s" onclick="guardarT1()" style="margin-top:12px;width:100%">💾 Guardar Asignaciones</button>
@@ -323,6 +324,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     <button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar fecha actual</button>
     <label id="lblAprobMasiva" style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="chkAprobMasiva" checked onchange="aprobacionMasivaActiva=this.checked;guardarLS()"> Aprob. masiva</label>
     <button class="btn btn-d" onclick="limpiarTodo()" style="background:#991b1b">💣 Reset Total</button>
+    <button class="btn btn-i" onclick="modalRecuperarAsg()" style="background:#2c5282" title="Recupera asignaciones desde versiones anteriores guardadas en SharePoint">🕘 Recuperar asignaciones (historial SP)</button>
   </div>
   <input type="file" id="impFile" accept=".json" style="display:none" onchange="doImpJSON(event)">
 </div>
@@ -743,6 +745,74 @@ async function spEscribirItem(key,valor){
   }
 }
 
+async function spLeerVersiones(key){
+  var token=await _getToken();
+  var item=await spLeerItem(key);
+  if(!item)throw new Error('No existe el registro "'+key+'" en '+SP_LIST+'.');
+  var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+item.Id+")/versions?$select=VersionLabel,Created,Valor&$orderby=VersionLabel desc&$top=300",
+    {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+  if(!r.ok){
+    if(r.status===404)throw new Error('El historial de versiones no está disponible para esta lista (versionado deshabilitado).');
+    throw new Error('Error consultando versiones ('+r.status+')');
+  }
+  var d=await r.json();
+  return {itemId:item.Id,actual:item.Valor,versiones:(d.value||[])};
+}
+
+// =====================================================
+// === COPIAS DE SEGURIDAD DIARIAS DE "asg" ===
+// Red de seguridad independiente del historial de versiones de SharePoint
+// (que puede estar deshabilitado). Cada día, en el primer sync exitoso,
+// se guarda una "foto" completa de asg en un item asg_bak_YYYY-MM-DD.
+// Se conservan ~21 días y luego se eliminan automáticamente.
+// =====================================================
+function _hoyStr(){
+  var h=new Date();
+  return h.getFullYear()+'-'+String(h.getMonth()+1).padStart(2,'0')+'-'+String(h.getDate()).padStart(2,'0');
+}
+async function spBackupDiarioAsg(snapshot){
+  try{
+    var key='asg_bak_'+_hoyStr();
+    var existente=await spLeerItem(key);
+    if(existente)return; // ya hay copia de hoy, no repetir
+    await spEscribirItem(key,snapshot);
+    spLimpiarBackupsAntiguosAsg().catch(function(){});
+  }catch(e){console.warn('spBackupDiarioAsg:',e.message);}
+}
+async function spLimpiarBackupsAntiguosAsg(){
+  var token=await _getToken();
+  var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=startswith(Title,'asg_bak_')&$select=Id,Title&$top=200",
+    {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+  if(!r.ok)return;
+  var d=await r.json();
+  var limite=new Date();limite.setDate(limite.getDate()-21);
+  var digest=null;
+  for(var i=0;i<(d.value||[]).length;i++){
+    var it=d.value[i];
+    var fecha=new Date(it.Title.replace('asg_bak_',''));
+    if(!isNaN(fecha.getTime())&&fecha<limite){
+      if(!digest)digest=await _spGetDigest();
+      try{
+        await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+it.Id+")",
+          {method:'POST',headers:{'Accept':'application/json;odata=nometadata','X-RequestDigest':digest,'X-HTTP-Method':'DELETE','IF-MATCH':'*','Authorization':'Bearer '+token}});
+      }catch(e){console.warn('spLimpiarBackupsAntiguosAsg item:',e.message);}
+    }
+  }
+}
+async function spListarBackupsAsg(){
+  try{
+    var token=await _getToken();
+    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=startswith(Title,'asg_bak_')&$select=Title,Valor&$top=100&$orderby=Title desc",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(!r.ok)return [];
+    var d=await r.json();
+    return (d.value||[]).filter(function(it){return it.Valor;}).map(function(it){
+      var fecha=it.Title.replace('asg_bak_','');
+      return {VersionLabel:'📦 Copia diaria '+fecha,Created:fecha+'T00:00:00',Valor:it.Valor};
+    });
+  }catch(e){console.warn('spListarBackupsAsg:',e.message);return [];}
+}
+
 // =====================================================
 // === SP LISTA DE REGISTROS (fila por registro) ===
 // =====================================================
@@ -1116,16 +1186,26 @@ async function spGuardar(){
       var config={'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva,'PERMISOS':PERMISOS};
       for(var k in config)await spEscribirItem(k,config[k]);
     }
-    // asg — merge seguro: solo escribe si hay datos locales para la fecha,
-    // o si SP también está vacío para ese día (evita pisar datos de otros usuarios)
+    // asg — merge seguro por fecha: para CADA fecha que el local conoce (tiene al
+    // menos una entrada en `asg`), el local sobreescribe a SP. Las fechas que este
+    // dispositivo nunca cargó/tocó se conservan de SP (evita pisar datos de otros
+    // usuarios sobre fechas no vistas aquí).
+    // IMPORTANTE: antes solo se conservaba la fecha activa (fechaSel); si se cargaban
+    // asignaciones de varios días (ej. asignación masiva para toda la semana), las
+    // demás fechas se perdían en el siguiente auto-sync. Ahora se incluyen todas.
     var itAsg=await spLeerItem('asg');
     var spAsg=(itAsg&&itAsg.Valor)?JSON.parse(itAsg.Valor):[];
-    var localAsg=asg.filter(function(a){return a.f===fechaSel});
-    var spAsgFecha=spAsg.filter(function(a){return a.f===fechaSel});
-    if(localAsg.length>0||spAsgFecha.length===0){
-      var asgMerged=spAsg.filter(function(a){return a.f!==fechaSel}).concat(localAsg);
-      await spEscribirItem('asg',asgMerged);
-    }
+    var fechasLocales={};
+    asg.forEach(function(a){fechasLocales[a.f]=true;});
+    var localAsgHoy=asg.filter(function(a){return a.f===fechaSel});
+    var spAsgHoy=spAsg.filter(function(a){return a.f===fechaSel});
+    if(localAsgHoy.length>0||spAsgHoy.length===0)fechasLocales[fechaSel]=true;
+    var asgMerged=spAsg.filter(function(a){return !fechasLocales[a.f];}).concat(asg.filter(function(a){return fechasLocales[a.f];}));
+    await spEscribirItem('asg',asgMerged);
+    // Copia de seguridad diaria independiente (red de seguridad adicional ante
+    // pérdidas como la ocurrida, incluso si el historial de versiones de SP
+    // estuviera deshabilitado). No bloquea ni revierte el guardado si falla.
+    spBackupDiarioAsg(asgMerged).catch(function(){});
     // reg — ya no se escribe al blob; ControlHoras_Registros es la fuente de verdad.
     // Los registros se sincronizan fila-por-fila vía spEscribirReg() al consolidar/aprobar.
     // hue — merge completo: SP base + todas las fechas locales (no solo fechaSel)
@@ -1522,9 +1602,22 @@ function renderT1(){
 
   guardarModsEnMem();
   var c=document.getElementById('t1List'),src=(document.getElementById('srcW').value||'').toLowerCase(),flt=document.getElementById('fltA').value,d=fechaSel;
+  var fltEstado=document.getElementById('fltEstadoT1')?document.getElementById('fltEstadoT1').value:'';
   var list=TRB.filter(function(t){return t.activo});
   if(flt)list=list.filter(function(t){return t.area===flt});
   if(src)list=list.filter(function(t){return t.nombre.toLowerCase().indexOf(src)>=0||t.codigo.toLowerCase().indexOf(src)>=0});
+  if(fltEstado)list=list.filter(function(t){
+    var esNA=asg.find(function(a){return a.w===t.codigo&&a.f===d&&a.na});
+    if(esNA)return fltEstado==='na';
+    var regsT=reg.filter(function(r){return r.w===t.codigo&&r.f===d});
+    if(regsT.length>0){
+      var aprobadoAll=regsT.every(function(r){return r.st==='aprobado'});
+      return fltEstado==='aprobado'?aprobadoAll:(fltEstado==='consol'?!aprobadoAll:false);
+    }
+    var ex=asg.filter(function(a){return a.w===t.codigo&&a.f===d&&!a.na});
+    if(ex.length>0)return fltEstado==='asignado';
+    return fltEstado==='sin';
+  });
   list.sort(function(a,b){var ia=ORD.indexOf(a.area),ib=ORD.indexOf(b.area);if(ia<0)ia=999;if(ib<0)ib=999;return ia!==ib?ia-ib:a.nombre.localeCompare(b.nombre)});
   // Pre-cargar actividad base
   // Precarga manual con boton
@@ -4080,6 +4173,100 @@ function imprimirRptAct(){
   win.document.write('<script>window.onload=function(){window.print()}<\/script>');
   win.document.write('</body></html>');
   win.document.close();
+}
+// =====================================================
+// === RECUPERACIÓN DE ASIGNACIONES (historial de versiones SP) ===
+// =====================================================
+async function modalRecuperarAsg(){
+  if(!soloAdmin())return;
+  if(!SP_READY){alert('Necesitas estar conectado a SharePoint para ver el historial.');return;}
+  document.getElementById('modalContainer').innerHTML='<div class="modal-bg"><div class="modal" style="max-width:760px;width:97%"><h2>🕘 Recuperar Asignaciones</h2><p style="color:#718096;font-size:13px">⏳ Consultando historial de versiones y copias de seguridad en SharePoint...</p></div></div>';
+  try{
+    var versiones=[];var avisoVersionado='';
+    try{
+      var res=await spLeerVersiones('asg');
+      versiones=(res.versiones||[]).filter(function(v){return v.Valor;});
+    }catch(e){
+      console.warn('spLeerVersiones asg:',e.message);
+      avisoVersionado='<div class="alert al-w" style="font-size:11px;margin-bottom:8px">⚠️ Historial de versiones de SharePoint no disponible ('+e.message+'). Mostrando solo copias de seguridad diarias de la app.</div>';
+    }
+    var backups=await spListarBackupsAsg();
+    var todas=versiones.concat(backups);
+    if(!todas.length){
+      document.getElementById('modalContainer').innerHTML='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:560px;width:96%">'+
+        '<h2>🕘 Recuperar Asignaciones</h2><p style="font-size:13px;color:#718096">No se encontraron versiones anteriores ni copias de seguridad con datos para "asg". '+
+        'Si el historial de versiones de la lista <b>'+SP_LIST+'</b> está deshabilitado y aún no se ha generado ninguna copia diaria, no es posible recuperar por esta vía.</p>'+
+        '<div style="display:flex;gap:6px;margin-top:14px"><button class="btn btn-d" onclick="cerrarModal()">Cerrar</button></div></div></div>';
+      return;
+    }
+    var filas=todas.map(function(v){
+      var arr=[];try{arr=JSON.parse(v.Valor)||[];}catch(e){}
+      var fechas={};arr.forEach(function(a){fechas[a.f]=(fechas[a.f]||0)+1;});
+      return {label:v.VersionLabel,fecha:v.Created,arr:arr,fechas:fechas,total:arr.length};
+    });
+    window._recupAsgVersiones=filas;
+    var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:760px;width:97%;max-height:88vh;overflow:auto">';
+    mh+='<h2>🕘 Recuperar Asignaciones — versiones y copias anteriores</h2>';
+    mh+=avisoVersionado;
+    mh+='<p style="font-size:12px;color:#718096;margin-bottom:10px">Estas son las versiones guardadas del registro "asg" en SharePoint y las copias de seguridad diarias de la app. Elige una y luego selecciona las fechas que quieres restaurar. La restauración solo <b>agrega</b> registros que falten, no borra ni duplica nada existente.</p>';
+    mh+='<table><thead><tr><th>Versión</th><th>Guardado</th><th>Total registros</th><th>Fechas con datos (cant.)</th><th></th></tr></thead><tbody>';
+    filas.forEach(function(f,i){
+      var fechasOrd=Object.keys(f.fechas).sort();
+      mh+='<tr><td>'+f.label+'</td><td>'+new Date(f.fecha).toLocaleString()+'</td><td>'+f.total+'</td>';
+      mh+='<td style="font-size:11px">'+(fechasOrd.length?fechasOrd.map(function(fc){return fc+' ('+f.fechas[fc]+')';}).join(', '):'<i>sin datos</i>')+'</td>';
+      mh+='<td><button class="btn btn-sm btn-p" onclick="modalRecuperarAsgDetalle('+i+')" '+(fechasOrd.length?'':'disabled')+'>Ver / Restaurar</button></td></tr>';
+    });
+    mh+='</tbody></table>';
+    mh+='<div style="display:flex;gap:6px;margin-top:14px"><button class="btn btn-d" onclick="cerrarModal()">Cerrar</button></div>';
+    mh+='</div></div>';
+    document.getElementById('modalContainer').innerHTML=mh;
+  }catch(e){
+    document.getElementById('modalContainer').innerHTML='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:560px;width:96%">'+
+      '<h2>🕘 Recuperar Asignaciones</h2><p style="font-size:13px;color:#c53030">Error: '+e.message+'</p>'+
+      '<div style="display:flex;gap:6px;margin-top:14px"><button class="btn btn-d" onclick="cerrarModal()">Cerrar</button></div></div></div>';
+  }
+}
+function modalRecuperarAsgDetalle(i){
+  var f=(window._recupAsgVersiones||[])[i];if(!f)return;
+  var fechasOrd=Object.keys(f.fechas).sort();
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:620px;width:96%;max-height:88vh;overflow:auto">';
+  mh+='<h2>🕘 Restaurar versión '+f.label+'</h2>';
+  mh+='<p style="font-size:12px;color:#718096;margin-bottom:10px">Guardado: '+new Date(f.fecha).toLocaleString()+'. Marca las fechas que quieres restaurar. Se agregarán los registros de esa fecha que aún no existan en tus datos actuales (comparando trabajador + actividad). No se borra ni duplica nada.</p>';
+  mh+='<div style="max-height:320px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px;padding:8px">';
+  fechasOrd.forEach(function(fc){
+    var actualesCount=asg.filter(function(a){return a.f===fc;}).length;
+    var faltan=f.arr.filter(function(a){return a.f===fc&&!asg.some(function(x){return x.f===a.f&&x.w===a.w&&String(x.act)===String(a.act)&&!!x.na===!!a.na;});}).length;
+    mh+='<div class="cbi" style="padding:4px 0"><input type="checkbox" class="rec-fecha" value="'+fc+'" '+(faltan>0?'checked':'')+'>';
+    mh+='<label>📅 '+fc+' — versión: '+f.fechas[fc]+' reg. · actual: '+actualesCount+' reg. · <b style="color:'+(faltan>0?'#2f855a':'#a0aec0')+'">'+(faltan>0?('faltan '+faltan):'sin diferencias')+'</b></label></div>';
+  });
+  mh+='</div>';
+  mh+='<div style="display:flex;gap:6px;margin-top:14px">';
+  mh+='<button class="btn btn-s" onclick="confirmarRestaurarAsg('+i+')">✅ Restaurar seleccionadas</button>';
+  mh+='<button class="btn btn-d" onclick="modalRecuperarAsg()">⬅ Volver</button>';
+  mh+='</div></div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+}
+function confirmarRestaurarAsg(i){
+  var fechas=[].slice.call(document.querySelectorAll('.rec-fecha:checked')).map(function(c){return c.value;});
+  if(!fechas.length){alert('Selecciona al menos una fecha.');return;}
+  if(!confirm('Vas a restaurar asignaciones para '+fechas.length+' fecha(s) desde la versión seleccionada.\n\nSolo se AGREGARÁN los registros que falten (no se borra nada existente).\n\n¿Continuar?'))return;
+  restaurarAsgVersion(i,fechas);
+}
+function restaurarAsgVersion(verIdx,fechas){
+  var v=(window._recupAsgVersiones||[])[verIdx];
+  if(!v)return;
+  var agregados=0,yaExistian=0;
+  v.arr.forEach(function(a){
+    if(fechas.indexOf(a.f)<0)return;
+    var existe=asg.some(function(x){return x.f===a.f&&x.w===a.w&&String(x.act)===String(a.act)&&!!x.na===!!a.na;});
+    if(existe){yaExistian++;return;}
+    asg.push(JSON.parse(JSON.stringify(a)));agregados++;
+  });
+  guardarLS();
+  cerrarModal();
+  if(fechas.indexOf(fechaSel)>=0){renderT1();}
+  toast('✅ '+agregados+' asignación(es) restaurada(s)'+(yaExistian?' · '+yaExistian+' ya existían y no se duplicaron':''),'info',6000);
+  if(SP_READY){spGuardar().catch(function(e){console.warn('spGuardar tras restauración:',e.message);});}
 }
 function renderPlanDia(){
   var el=document.getElementById('rptFecha');if(!el)return;
