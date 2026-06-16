@@ -343,6 +343,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button class="btn btn-sm" onclick="repararHorasReg()" style="margin-left:6px;background:#553c9a;color:#fff;border:none" title="Alinea HAsig=HReg en todos los registros NORMAL con inconsistencia">🔧 Reparar HAsig→SP</button>
 <button class="btn btn-sm" onclick="subirTodoSP()" style="margin-left:6px;background:#276749;color:#fff;border:none" title="Sube TODOS los registros a ControlHoras_Registros (incluye los que ya tienen ID)">☁️ Subir todo a SP</button>
 <button class="btn btn-sm" onclick="diagnosticarSPReg()" style="margin-left:6px;background:#2b4c8c;color:#fff;border:none" title="Verifica que la lista ControlHoras_Registros esté bien configurada">🔍 Diagnosticar lista</button>
+<button class="btn btn-sm" onclick="spCrearListaAsignaciones()" style="margin-left:6px;background:#065f46;color:#fff;border:none" title="Crea la lista ControlHoras_Asignaciones en SharePoint (nueva arquitectura fila-por-asignación)">🏗️ Crear lista Asignaciones</button>
 </div>
 <div class="grid-2">
 <div class="card"><h2>👥 Trabajadores</h2>
@@ -572,6 +573,13 @@ function guardarLS(){
       console.warn('SP guardar:',e);
     });
   }
+}
+// Helper: agregar una entrada a asg con los campos obligatorios v2
+function _pushAsg(entry){
+  if(!entry._key)entry._key=_asgKey(entry);
+  if(!entry.estado)entry.estado='BORRADOR';
+  if(!entry.creadoPor)entry.creadoPor=usuarioLogueado||'';
+  asg.push(entry);
 }
 async function guardarAsignaciones(){
   guardarModsEnMem();guardarModsConsol();
@@ -808,9 +816,20 @@ async function spListarBackupsAsg(){
     var d=await r.json();
     return (d.value||[]).filter(function(it){return it.Valor;}).map(function(it){
       var fecha=it.Title.replace('asg_bak_','');
-      return {VersionLabel:'📦 Copia diaria '+fecha,Created:fecha+'T00:00:00',Valor:it.Valor};
+      var esEmergencia=fecha.indexOf('T')>=0; // copias previas a un borrado: llevan hora exacta (ISO)
+      return {VersionLabel:(esEmergencia?'🛟 Copia previa a borrado ':'📦 Copia diaria ')+fecha,Created:esEmergencia?fecha:fecha+'T00:00:00',Valor:it.Valor};
     });
   }catch(e){console.warn('spListarBackupsAsg:',e.message);return [];}
+}
+// Copia de seguridad de emergencia: se guarda justo ANTES de cualquier
+// operación destructiva (limpiar fecha, limpiar todos los registros, reset
+// total del dispositivo), para poder restaurar desde el modal de
+// "Recuperar asignaciones" si la acción fue un error.
+async function spBackupEmergenciaAsg(){
+  try{
+    var key='asg_bak_'+new Date().toISOString();
+    await spEscribirItem(key,asg);
+  }catch(e){console.warn('spBackupEmergenciaAsg:',e.message);}
 }
 
 // =====================================================
@@ -1031,17 +1050,170 @@ async function spEliminarReg(r){
   var rd=await fetch(listUrl+'('+spId+')',{method:'POST',headers:hdr,body:'{}'});
   if(!rd.ok&&rd.status!==204)console.warn('spEliminarReg: DELETE fallo ('+rd.status+') spId='+spId);
 }
+// =====================================================
+// === LISTA PROPIA DE ASIGNACIONES (v2) ===
+// Cada asignación = 1 fila en ControlHoras_Asignaciones.
+// Elimina el riesgo de pérdida masiva por blob único:
+// si falla 1 fila, las demás quedan intactas en SP.
+// Compatibilidad hacia atrás: si la lista no existe aún,
+// todo sigue funcionando con el blob (comportamiento anterior).
+// =====================================================
+var SP_LIST_ASG='ControlHoras_Asignaciones';
+var _SP_ASG_LIST_VERIFIED=null; // null=sin verificar, true/false
+
+function _asgKey(a){return'ASG_'+a.f+'_'+a.w+'_'+(a.act||'NA');}
+function _asgHash(a){
+  return _stableStringify({f:a.f,w:a.w,act:a.act,h:a.h,x:!!a.x,
+    mods:(a.mods||[]).slice().sort(),obs:a.obs||'',ref:a.ref||'',
+    na:!!a.na,mt:a.mt||'',estado:a.estado||''});
+}
+function asgToSPCols(a){
+  var trb=TRB.find(function(t){return t.codigo===a.w;})||{};
+  return {
+    Title:a._key||_asgKey(a),
+    Fecha:a.f||'',Codigo:a.w||'',
+    Trabajador:trb.nombre||a.w||'',Area:trb.area||'',
+    ActividadId:String(a.act||''),Unidad:a.uni||'',
+    HAsig:a.h||0,EsExtras:!!a.x,
+    Modulos:(a.mods||[]).join(', '),
+    Observaciones:a.obs||'',Referencia:a.ref||'',
+    EsNA:!!a.na,Motivo:a.mt||'',
+    Estado:a.estado||'BORRADOR',
+    CreadoPor:a.creadoPor||usuarioLogueado||''
+  };
+}
+function spColsToAsg(it){
+  return {
+    _key:it.Title,_spId:it.Id,
+    f:it.Fecha||'',w:it.Codigo||'',
+    act:it.ActividadId||'',uni:it.Unidad||'',
+    h:parseFloat(it.HAsig)||0,x:!!it.EsExtras,
+    mods:it.Modulos?it.Modulos.split(', ').filter(Boolean):[],
+    obs:it.Observaciones||'',ref:it.Referencia||'',
+    na:!!it.EsNA,mt:it.Motivo||'',
+    estado:it.Estado||'BORRADOR',creadoPor:it.CreadoPor||''
+  };
+}
+async function _spAsgListOK(){
+  if(_SP_ASG_LIST_VERIFIED!==null)return _SP_ASG_LIST_VERIFIED;
+  try{
+    var token=await _getToken();
+    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')?$select=Title",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    _SP_ASG_LIST_VERIFIED=r.ok;
+    if(!r.ok)console.info('Lista '+SP_LIST_ASG+' no encontrada — se usa blob como respaldo.');
+  }catch(e){_SP_ASG_LIST_VERIFIED=false;}
+  return _SP_ASG_LIST_VERIFIED;
+}
+async function spEscribirAsg(a){
+  if(!SP_READY)return;
+  if(!a._key)a._key=_asgKey(a);
+  if(!a.estado)a.estado='BORRADOR';
+  var token=await _getToken();var digest=await _spGetDigest();
+  var body=JSON.stringify(asgToSPCols(a));
+  var hdrBase={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token};
+  var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')/items";
+  if(a._spId){
+    var rm=await fetch(listUrl+'('+a._spId+')',{method:'POST',headers:Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'}),body:body});
+    if(!rm.ok&&rm.status!==204)throw new Error('ASG MERGE ('+rm.status+')');
+  }else{
+    var fr=await fetch(listUrl+'?$filter='+encodeURIComponent("Title eq '"+a._key+"'")+'&$select=Id&$top=1',
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(fr.ok){var fd=await fr.json();
+      if(fd.value&&fd.value.length){
+        a._spId=fd.value[0].Id;
+        var rm2=await fetch(listUrl+'('+a._spId+')',{method:'POST',headers:Object.assign({},hdrBase,{'IF-MATCH':'*','X-HTTP-Method':'MERGE'}),body:body});
+        if(!rm2.ok&&rm2.status!==204)throw new Error('ASG MERGE(2) ('+rm2.status+')');
+        a._hash=_asgHash(a);return;
+      }
+    }
+    var cr=await fetch(listUrl,{method:'POST',headers:hdrBase,body:body});
+    if(cr.ok){var cd=await cr.json();if(cd.Id)a._spId=cd.Id;}
+    else{var ct=await cr.text();throw new Error('ASG crear ('+cr.status+'): '+ct.substring(0,80));}
+  }
+  a._hash=_asgHash(a);
+}
+async function spBorrarAsg(a){
+  if(!SP_READY||!a)return;
+  var spId=a._spId,token=await _getToken(),digest=await _spGetDigest();
+  var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')/items";
+  if(!spId&&(a._key||a.f)){
+    var key=a._key||_asgKey(a);
+    var fr=await fetch(listUrl+'?$filter='+encodeURIComponent("Title eq '"+key+"'")+'&$select=Id&$top=1',
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(fr.ok){var fd=await fr.json();if(fd.value&&fd.value.length)spId=fd.value[0].Id;}
+  }
+  if(!spId)return;
+  await fetch(listUrl+'('+spId+')',{method:'POST',headers:{'Accept':'application/json;odata=nometadata',
+    'Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,
+    'Authorization':'Bearer '+token,'IF-MATCH':'*','X-HTTP-Method':'DELETE'},body:'{}'});
+}
+async function spCargarAsignaciones(desde,hasta){
+  var token=await _getToken();
+  var filter="Fecha ge '"+desde+"' and Fecha le '"+hasta+"'";
+  var sel='Id,Title,Fecha,Codigo,ActividadId,Unidad,HAsig,EsExtras,Modulos,Observaciones,Referencia,EsNA,Motivo,Estado,CreadoPor';
+  var url=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')/items?$filter="+encodeURIComponent(filter)+"&$select="+sel+"&$top=500&$orderby=Fecha asc";
+  var items=[];
+  while(url){
+    var r=await fetch(url,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(!r.ok)throw new Error('spCargarAsignaciones: '+r.status);
+    var d=await r.json();items=items.concat(d.value||[]);url=d['odata.nextLink']||null;
+  }
+  return items.map(spColsToAsg);
+}
+async function migrarAsgAListaPropia(){
+  if(!SP_READY)return;
+  if(localStorage.getItem('asg_v2_migrado')==='1')return;
+  if(!(await _spAsgListOK())){console.info('migrarAsgAListaPropia: lista no disponible aún');return;}
+  if(!asg.length){localStorage.setItem('asg_v2_migrado','1');return;}
+  toast('⏳ Migrando asignaciones a lista propia (una sola vez)...','info',30000);
+  asg.forEach(function(a){if(!a._key)a._key=_asgKey(a);if(!a.estado)a.estado='BORRADOR';});
+  var ok=0,err=0;
+  for(var i=0;i<asg.length;i++){
+    try{await spEscribirAsg(asg[i]);ok++;}
+    catch(e){err++;console.warn('migrarAsg['+i+']:',e.message);}
+  }
+  guardarLS();
+  if(err===0){
+    localStorage.setItem('asg_v2_migrado','1');
+    toast('✅ '+ok+' asignaciones migradas a lista propia','info',5000);
+  }else{
+    toast('⚠️ Migración: '+ok+' OK, '+err+' errores — se reintentará en el próximo sync','warn',7000);
+  }
+}
+
 async function spCargarRegistros(){
   if(!SP_READY)return;
   try{
     var token=await _getToken();
     var sel='Id,Title,Fecha,Codigo,Trabajador,Area,Unidad,Categoria,SubCategoria,ActividadId,TipoHora,HAsig,HReg,Rendimiento,Indicador,HHuellero,Entrada,Salida,Modulos,Referencia,Observaciones,Estado,FechaConsolid,FechaAprob,MotivoRechazo,AprobadoPor';
-    var url=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items?$select="+sel+"&$top=5000&$orderby=Fecha asc";
-    var r=await fetch(url,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
-    if(!r.ok){console.warn('ControlHoras_Registros: lista no encontrada ('+r.status+')');return;}
-    var d=await r.json();
+    // Paginado: $top=5000 es el límite por página de SharePoint, NO el total.
+    // Si la lista supera los 5000 registros (~unos pocos meses de operación),
+    // sin seguir "odata.nextLink" se cortaría silenciosamente y se perderían
+    // de vista los registros más nuevos (porque se ordena por Fecha asc).
+    var spRegs=[];
+    var nextUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items?$select="+sel+"&$top=5000&$orderby=Fecha asc";
+    var primeraPagina=true;
+    while(nextUrl){
+      var r=await fetch(nextUrl,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+      if(!r.ok){
+        if(primeraPagina){console.warn('ControlHoras_Registros: lista no encontrada ('+r.status+')');return;}
+        console.warn('ControlHoras_Registros: error obteniendo página adicional ('+r.status+'), se continúa con lo ya descargado.');
+        break;
+      }
+      var d=await r.json();
+      spRegs=spRegs.concat((d.value||[]).map(spColsToReg));
+      nextUrl=d['odata.nextLink']||null;
+      primeraPagina=false;
+    }
+    // Guardia anti-pérdida: si SP devolvió 0 registros pero localmente ya
+    // teníamos datos, probablemente fue un fallo de la consulta (no una
+    // lista vacía real). No sobrescribimos para no borrar todo localmente.
+    if(spRegs.length===0&&reg.length>0){
+      console.warn('spCargarRegistros: SP devolvió 0 registros pero hay '+reg.length+' locales; se conserva la copia local.');
+      return;
+    }
     // Construir índices de SP para deduplicación
-    var spRegs=(d.value||[]).map(spColsToReg);
     var spById={};       // id (Title) → registro SP
     var spByNatKey={};   // "fecha|worker|actId" → 1  (clave natural para registros sin ID)
     spRegs.forEach(function(x){
@@ -1059,6 +1231,59 @@ async function spCargarRegistros(){
     localStorage.setItem('reg',JSON.stringify(reg));
     console.log('SP Registros cargados: '+spRegs.length+(localToKeep.length?' + '+localToKeep.length+' locales pendientes':''));
   }catch(e){console.warn('spCargarRegistros:',e.message);}
+}
+async function spCrearListaAsignaciones(){
+  if(!SP_READY){alert('SP no conectado');return;}
+  if(!confirm('¿Crear la lista "'+SP_LIST_ASG+'" en SharePoint?\n\nNecesaria para la nueva arquitectura fila-por-asignación. Solo hay que hacerlo una vez.'))return;
+  toast('⏳ Creando lista en SharePoint...','info',20000);
+  var token=await _getToken();var digest=await _spGetDigest();
+  var hdrBase={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token};
+  // Verificar si ya existe
+  var rChk=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')?$select=Title",
+    {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+  if(rChk.ok){
+    _SP_ASG_LIST_VERIFIED=true;
+    toast('ℹ️ La lista "'+SP_LIST_ASG+'" ya existe','info',4000);
+    return;
+  }
+  // Crear lista
+  var rCr=await fetch(SP_URL+"/_api/web/lists",{method:'POST',headers:hdrBase,
+    body:JSON.stringify({Title:SP_LIST_ASG,BaseTemplate:100,
+      Description:'Asignaciones diarias — una fila por persona/actividad/día'})});
+  if(!rCr.ok){var te=await rCr.text();alert('Error al crear la lista ('+rCr.status+'):\n'+te.substring(0,300));return;}
+  // Agregar columnas
+  var fieldsUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')/fields";
+  var campos=[
+    {FieldTypeKind:2,Title:'Fecha',Description:'YYYY-MM-DD'},
+    {FieldTypeKind:2,Title:'Codigo'},
+    {FieldTypeKind:2,Title:'Trabajador'},
+    {FieldTypeKind:2,Title:'Area'},
+    {FieldTypeKind:2,Title:'ActividadId'},
+    {FieldTypeKind:2,Title:'Unidad'},
+    {FieldTypeKind:9,Title:'HAsig'},
+    {FieldTypeKind:8,Title:'EsExtras'},
+    {FieldTypeKind:2,Title:'Modulos'},
+    {FieldTypeKind:3,Title:'Observaciones'},
+    {FieldTypeKind:2,Title:'Referencia'},
+    {FieldTypeKind:8,Title:'EsNA'},
+    {FieldTypeKind:2,Title:'Motivo'},
+    {FieldTypeKind:2,Title:'Estado'},
+    {FieldTypeKind:2,Title:'CreadoPor'}
+  ];
+  var errCols=[];
+  for(var i=0;i<campos.length;i++){
+    try{
+      var rF=await fetch(fieldsUrl,{method:'POST',headers:hdrBase,body:JSON.stringify(campos[i])});
+      if(!rF.ok){var tf=await rF.text();errCols.push(campos[i].Title+' ('+rF.status+')');}
+    }catch(e){errCols.push(campos[i].Title+': '+e.message);}
+  }
+  _SP_ASG_LIST_VERIFIED=null; // re-verificar en el próximo uso
+  localStorage.removeItem('asg_v2_migrado'); // forzar migración de datos existentes
+  if(errCols.length){
+    alert('Lista creada pero '+ errCols.length+' columna(s) fallaron:\n'+errCols.join('\n')+'\n\nPresioná el botón otra vez para completar.');
+  }else{
+    toast('✅ Lista "'+SP_LIST_ASG+'" creada con '+campos.length+' columnas. Los datos se migrarán en el próximo sync.','info',8000);
+  }
 }
 async function diagnosticarSPReg(){
   var log=[];
@@ -1139,7 +1364,30 @@ async function migrarRegistrosSP(){
 async function spCargar(){
   // ── Carga todos los blobs de ControlHoras_Datos en UNA sola petición ──────
   var mapa={
-    'asg':function(v){asg=v;localStorage.setItem('asg',JSON.stringify(v))},
+    // Guardia anti-pérdida: si lo que llega de SharePoint tiene MENOS registros
+    // que los que ya tenemos localmente para alguna fecha que este dispositivo
+    // conoce, NO sobrescribimos esa fecha — nos quedamos con la copia local
+    // (más completa) y se reintenta en el próximo ciclo. Esto evita que un
+    // problema de sincronización borre silenciosamente datos ya cargados.
+    'asg':function(v){
+      var porFechaLocal={};
+      asg.forEach(function(a){porFechaLocal[a.f]=(porFechaLocal[a.f]||0)+1;});
+      var porFechaNuevo={};
+      v.forEach(function(a){porFechaNuevo[a.f]=(porFechaNuevo[a.f]||0)+1;});
+      var fechasConPerdida=Object.keys(porFechaLocal).filter(function(f){
+        return (porFechaNuevo[f]||0)<porFechaLocal[f];
+      });
+      if(fechasConPerdida.length){
+        console.warn('spCargar: posible pérdida de datos en asg para fechas',fechasConPerdida,'— se conservan los registros locales de esas fechas.');
+        toast('⚠️ Se detectó una posible pérdida de datos al sincronizar ('+fechasConPerdida.join(', ')+'). Se mantuvo tu copia local; se reintentará.','warn',9000);
+        // Combinar: usar lo nuevo de SP para fechas sin pérdida, y conservar lo local para las que tendrían pérdida
+        var fechasOk={};Object.keys(porFechaNuevo).forEach(function(f){if(fechasConPerdida.indexOf(f)<0)fechasOk[f]=true;});
+        // también incluir fechas que están en SP pero no localmente (datos de otros dispositivos)
+        Object.keys(porFechaNuevo).forEach(function(f){if(!(f in porFechaLocal))fechasOk[f]=true;});
+        v=v.filter(function(a){return fechasOk[a.f];}).concat(asg.filter(function(a){return fechasConPerdida.indexOf(a.f)>=0;}));
+      }
+      asg=v;localStorage.setItem('asg',JSON.stringify(v));
+    },
     // 'reg' ya no se carga desde blob — ControlHoras_Registros es la fuente de verdad (spCargarRegistros)
     'hue':function(v){hue=Object.assign({},v,hue);localStorage.setItem('hue',JSON.stringify(hue))},
     'usr':function(v){usr=v;localStorage.setItem('usr',JSON.stringify(v))},
@@ -1175,8 +1423,41 @@ async function spCargar(){
   await spCargarTRB();       // carga trabajadores desde ControlHoras_Trabajadores
   await spCargarACT();       // carga actividades desde ControlHoras_Actividades
   await spCargarRegistros(); // carga lista fila-por-registro
+  // asg — si la lista propia está disponible, sobreescribe lo que vino del blob
+  if(await _spAsgListOK()){
+    try{
+      var hoyAsg=new Date();
+      var desdeAsg=new Date(hoyAsg);desdeAsg.setDate(desdeAsg.getDate()-60);
+      var hastaAsg=new Date(hoyAsg);hastaAsg.setDate(hastaAsg.getDate()+30);
+      var fmtAsg=function(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
+      var spAsgRows=await spCargarAsignaciones(fmtAsg(desdeAsg),fmtAsg(hastaAsg));
+      // Conservar entradas locales nuevas que aún no subieron (sin _hash = nunca sincronizadas)
+      var spByKeyAsg={};spAsgRows.forEach(function(a){spByKeyAsg[a._key]=1;});
+      var localPendAsg=asg.filter(function(a){return !a._hash&&!spByKeyAsg[a._key||_asgKey(a)];});
+      asg=spAsgRows.concat(localPendAsg);
+      localStorage.setItem('asg',JSON.stringify(asg));
+      console.log('ASG desde lista propia: '+spAsgRows.length+(localPendAsg.length?' + '+localPendAsg.length+' locales pendientes':''));
+    }catch(e){console.warn('spCargarAsignaciones error (usando blob como respaldo):',e.message);}
+  }
 }
 
+// Serializa un valor de forma estable (claves de objetos ordenadas) para poder
+// comparar si dos estructuras son "iguales" sin que el orden de las claves
+// genere falsos positivos de cambio.
+function _stableStringify(o){
+  if(Array.isArray(o))return '['+o.map(_stableStringify).join(',')+']';
+  if(o&&typeof o==='object'){
+    return '{'+Object.keys(o).sort().map(function(k){return JSON.stringify(k)+':'+_stableStringify(o[k]);}).join(',')+'}';
+  }
+  return JSON.stringify(o);
+}
+// Compara dos arreglos de objetos como CONJUNTOS (sin importar el orden de los
+// elementos ni el orden de las claves de cada objeto). Se usa para detectar si
+// "asg" realmente cambió antes de escribir a SharePoint (y así no generar una
+// nueva versión por nada en cada sync de 60s).
+function _normArr(arr){
+  return (arr||[]).map(_stableStringify).sort().join('§');
+}
 async function spGuardar(){
   if(!SP_READY||SP_GUARDANDO)return;SP_GUARDANDO=true;
   try{
@@ -1186,26 +1467,35 @@ async function spGuardar(){
       var config={'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva,'PERMISOS':PERMISOS};
       for(var k in config)await spEscribirItem(k,config[k]);
     }
-    // asg — merge seguro por fecha: para CADA fecha que el local conoce (tiene al
-    // menos una entrada en `asg`), el local sobreescribe a SP. Las fechas que este
-    // dispositivo nunca cargó/tocó se conservan de SP (evita pisar datos de otros
-    // usuarios sobre fechas no vistas aquí).
-    // IMPORTANTE: antes solo se conservaba la fecha activa (fechaSel); si se cargaban
-    // asignaciones de varios días (ej. asignación masiva para toda la semana), las
-    // demás fechas se perdían en el siguiente auto-sync. Ahora se incluyen todas.
-    var itAsg=await spLeerItem('asg');
-    var spAsg=(itAsg&&itAsg.Valor)?JSON.parse(itAsg.Valor):[];
-    var fechasLocales={};
-    asg.forEach(function(a){fechasLocales[a.f]=true;});
-    var localAsgHoy=asg.filter(function(a){return a.f===fechaSel});
-    var spAsgHoy=spAsg.filter(function(a){return a.f===fechaSel});
-    if(localAsgHoy.length>0||spAsgHoy.length===0)fechasLocales[fechaSel]=true;
-    var asgMerged=spAsg.filter(function(a){return !fechasLocales[a.f];}).concat(asg.filter(function(a){return fechasLocales[a.f];}));
-    await spEscribirItem('asg',asgMerged);
-    // Copia de seguridad diaria independiente (red de seguridad adicional ante
-    // pérdidas como la ocurrida, incluso si el historial de versiones de SP
-    // estuviera deshabilitado). No bloquea ni revierte el guardado si falla.
-    spBackupDiarioAsg(asgMerged).catch(function(){});
+    // asg — si ControlHoras_Asignaciones existe: fila por fila (pérdida de 1 fila
+    // no afecta al resto). Si no existe aún: blob por fecha como antes (compatibilidad).
+    if(await _spAsgListOK()){
+      asg.forEach(function(a){if(!a._key)a._key=_asgKey(a);if(!a.estado)a.estado='BORRADOR';});
+      // Escribir solo las entradas que cambiaron (comparación por hash)
+      var toWriteAsg=asg.filter(function(a){return !a._hash||a._hash!==_asgHash(a);});
+      if(toWriteAsg.length){
+        await Promise.all(toWriteAsg.map(function(a){
+          return spEscribirAsg(a).catch(function(e){console.warn('spGuardar asg fila:',e.message);});
+        }));
+        guardarLS(); // persiste _spId y _hash actualizados
+      }
+      // Backup diario como snapshot de seguridad adicional
+      spBackupDiarioAsg(asg).catch(function(){});
+      // Primera vez: migrar datos que llegaron del blob antes de que la lista existiera
+      migrarAsgAListaPropia().catch(function(){});
+    }else{
+      // Respaldo: blob seguro por fecha (comportamiento original)
+      var itAsg=await spLeerItem('asg');
+      var spAsg=(itAsg&&itAsg.Valor)?JSON.parse(itAsg.Valor):[];
+      var fechasLocales={};
+      asg.forEach(function(a){fechasLocales[a.f]=true;});
+      var localAsgHoy=asg.filter(function(a){return a.f===fechaSel});
+      var spAsgHoy=spAsg.filter(function(a){return a.f===fechaSel});
+      if(localAsgHoy.length>0||spAsgHoy.length===0)fechasLocales[fechaSel]=true;
+      var asgMerged=spAsg.filter(function(a){return !fechasLocales[a.f];}).concat(asg.filter(function(a){return fechasLocales[a.f];}));
+      if(_normArr(asgMerged)!==_normArr(spAsg)){await spEscribirItem('asg',asgMerged);}
+      spBackupDiarioAsg(asgMerged).catch(function(){});
+    }
     // reg — ya no se escribe al blob; ControlHoras_Registros es la fuente de verdad.
     // Los registros se sincronizan fila-por-fila vía spEscribirReg() al consolidar/aprobar.
     // hue — merge completo: SP base + todas las fechas locales (no solo fechaSel)
@@ -1213,7 +1503,9 @@ async function spGuardar(){
     var spHue=(itHue&&itHue.Valor)?JSON.parse(itHue.Valor):{};
     if(Object.keys(hue).length>0){
       var hueMerged=Object.assign({},spHue,hue); // local sobreescribe SP por fecha
-      await spEscribirItem('hue',hueMerged);
+      if(_stableStringify(hueMerged)!==_stableStringify(spHue)){
+        await spEscribirItem('hue',hueMerged);
+      }
     }
   }finally{SP_GUARDANDO=false}
 }
@@ -1889,21 +2181,29 @@ function confAddAct(){
     var act=ACT.find(function(a){return a.id===actId});
     var modBox=document.getElementById('mmod_'+actId);
     var selMods=modBox?[].slice.call(modBox.querySelectorAll('input:checked')).map(function(c){return c.value}):[];
-    asg.push({f:fechaSel,w:cod,act:actId,uni:act?act.unidad:'',h:0,x:false,na:false,mods:selMods});
+    _pushAsg({f:fechaSel,w:cod,act:actId,uni:act?act.unidad:'',h:0,x:false,na:false,mods:selMods});
   });
   guardarLS();cerrarModal();stats();renderT1();renderT2();
 }
 function delAct(cod,idx){
   guardarModsEnMem();guardarModsConsol();
   var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});
-  var i=asg.indexOf(ex[idx]);if(i>=0){asg.splice(i,1);}
+  var i=asg.indexOf(ex[idx]);
+  if(i>=0){
+    var gone=asg[i];asg.splice(i,1);
+    if(SP_READY)_spAsgListOK().then(function(ok){if(ok)spBorrarAsg(gone).catch(function(){});});
+  }
   guardarLS();renderT1();renderT2();stats();
 }
 function delActConsol(cod,idx){
   guardarModsConsol();
   var ex=asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na});
   if(ex.length<=1){alert('El trabajador debe tener al menos una actividad.');return}
-  var i=asg.indexOf(ex[idx]);if(i>=0){asg.splice(i,1);}
+  var i=asg.indexOf(ex[idx]);
+  if(i>=0){
+    var gone2=asg[i];asg.splice(i,1);
+    if(SP_READY)_spAsgListOK().then(function(ok){if(ok)spBorrarAsg(gone2).catch(function(){});});
+  }
   guardarLS();renderT2();renderT1();stats();
   toast('✅ Actividad eliminada');
 }
@@ -1916,8 +2216,19 @@ function updObsRef(cod){
   guardarLS();
 }
 function toggleNA(cod){guardarModsEnMem();var ch=document.getElementById('na_'+cod);var nd=document.getElementById('naD_'+cod);var af=document.getElementById('af_'+cod);
-  if(ch.checked){nd.style.display='';af.style.display='none';asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel)});asg.push({f:fechaSel,w:cod,na:true,mt:'',obs:'',h:0})}
-  else{nd.style.display='none';af.style.display='';asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel&&a.na)})}guardarLS();stats()}
+  if(ch.checked){
+    nd.style.display='';af.style.display='none';
+    var toDelNA=asg.filter(function(a){return a.w===cod&&a.f===fechaSel;});
+    asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel)});
+    if(SP_READY)_spAsgListOK().then(function(ok){if(ok)toDelNA.forEach(function(a){spBorrarAsg(a).catch(function(){});});});
+    _pushAsg({f:fechaSel,w:cod,na:true,mt:'',obs:'',h:0});
+  }else{
+    nd.style.display='none';af.style.display='';
+    var naGone=asg.find(function(a){return a.w===cod&&a.f===fechaSel&&a.na;});
+    asg=asg.filter(function(a){return !(a.w===cod&&a.f===fechaSel&&a.na)});
+    if(SP_READY&&naGone)_spAsgListOK().then(function(ok){if(ok)spBorrarAsg(naGone).catch(function(){});});
+  }
+  guardarLS();stats();}
 function selAllMod(id){var cbs=document.querySelectorAll('#mb_'+id+' input[type=checkbox]');var all=true;cbs.forEach(function(c){if(!c.checked)all=false});cbs.forEach(function(c){c.checked=!all})}
 function cargarPlantilla(){
   var d=fechaSel;
@@ -1933,7 +2244,7 @@ function cargarPlantilla(){
     var fechaObj=new Date(d+'T12:00:00');var diaSem=fechaObj.getDay();
     var hBase=diaSem===6?4:diaSem===0?0:(t.horas_base||8);
     if(hBase<=0)return;
-    asg.push({f:d,w:t.codigo,act:t.actividad_base,uni:actBase.unidad,h:hBase,x:false,na:false,mods:modsBase});
+    _pushAsg({f:d,w:t.codigo,act:t.actividad_base,uni:actBase.unidad,h:hBase,x:false,na:false,mods:modsBase});
     cnt++;
   });
   if(cnt>0){guardarLS();renderT1();stats();toast('\u2705 Plantilla cargada: '+cnt+' trabajadores')}
@@ -3263,6 +3574,9 @@ function eliminarCargo(id){if(!soloAdmin())return;
 async function limpiar(){
   if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para limpiar registros.');return;}
   if(!confirm('¿Borrar todos los registros de '+fechaSel+'?\nEsta acción no se puede deshacer.'))return;
+  // Copia de seguridad de emergencia antes de borrar (recuperable desde
+  // "🕘 Recuperar asignaciones" si fue un error).
+  if(SP_READY)await spBackupEmergenciaAsg();
   // Eliminar en memoria
   asg=asg.filter(function(a){return a.f!==fechaSel});
   reg=reg.filter(function(r){return r.f!==fechaSel});
@@ -3295,6 +3609,9 @@ async function limpiar(){
 async function limpiarTodosRegistros(){
   if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para borrar registros.');return;}
   if(!confirm('¿Borrar TODOS los registros de TODAS las fechas?\n\nEsto elimina asignaciones, consolidados y huellas de todos los días.\nLa configuración (trabajadores, actividades, módulos, etc.) NO se toca.\n\nEsta acción no se puede deshacer.'))return;
+  // Copia de seguridad de emergencia antes de borrar (recuperable desde
+  // "🕘 Recuperar asignaciones" si fue un error).
+  if(SP_READY)await spBackupEmergenciaAsg();
   asg=[];reg=[];hue={};
   localStorage.setItem('asg',JSON.stringify(asg));
   localStorage.setItem('reg',JSON.stringify(reg));
@@ -3316,7 +3633,11 @@ async function limpiarTodosRegistros(){
     toast('✅ Todos los registros eliminados.');
   }
 }
-function limpiarTodo(){if(!confirm('BORRAR TODO?'))return;limpiando=true;var keys=[];for(var i=0;i<localStorage.length;i++)keys.push(localStorage.key(i));keys.forEach(function(k){localStorage.removeItem(k)});sessionStorage.clear();window.location.replace(window.location.pathname+'?r='+Date.now())}
+async function limpiarTodo(){if(!confirm('BORRAR TODO?'))return;
+  // Copia de seguridad de emergencia de "asg" antes de resetear este dispositivo
+  // (recuperable desde "🕘 Recuperar asignaciones" si fue un error).
+  if(SP_READY){try{await spBackupEmergenciaAsg();}catch(e){}}
+  limpiando=true;var keys=[];for(var i=0;i<localStorage.length;i++)keys.push(localStorage.key(i));keys.forEach(function(k){localStorage.removeItem(k)});sessionStorage.clear();window.location.replace(window.location.pathname+'?r='+Date.now())}
 
 // === TAB 5: GESTION ===
 function renderGestion(){
