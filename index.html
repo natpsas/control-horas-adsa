@@ -418,7 +418,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.1 · 2026-06-17';
+var APP_VERSION='v6.2 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1429,6 +1429,11 @@ async function spCargar(){
     // (más completa) y se reintenta en el próximo ciclo. Esto evita que un
     // problema de sincronización borre silenciosamente datos ya cargados.
     'asg':function(v){
+      // Si la lista propia ControlHoras_Asignaciones está activa, el blob 'asg'
+      // está congelado (ya no se actualiza) y NO es comparable con lo local:
+      // la fuente de verdad es la lista, que se carga más abajo. Saltar para
+      // no disparar falsas alarmas de "posible pérdida" en cada sync.
+      if(asgListaActiva)return;
       var porFechaLocal={};
       asg.forEach(function(a){porFechaLocal[a.f]=(porFechaLocal[a.f]||0)+1;});
       var porFechaNuevo={};
@@ -1459,6 +1464,8 @@ async function spCargar(){
     'PERMISOS':function(v){for(var k in v)if(PERMISOS[k])PERMISOS[k]=Object.assign({},PERMISOS[k],v[k]);localStorage.setItem('PERMISOS_custom',JSON.stringify(PERMISOS))}
   };
   var ok=0;
+  // ¿Está activa la lista propia de asignaciones? Si sí, el blob 'asg' se ignora.
+  var asgListaActiva=await _spAsgListOK();
   try{
     var token=await _getToken();
     // Una sola petición trae todos los items del blob (vs 9 peticiones en serie antes)
