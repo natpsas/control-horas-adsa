@@ -574,11 +574,29 @@ function guardarLS(){
     });
   }
 }
+// =====================================================
+// === LÁPIDAS (TOMBSTONES) — borrados a prueba de fallos ===
+// Cuando se borra una fila (asg o reg), su clave se guarda aquí hasta
+// CONFIRMAR que SharePoint la eliminó. Mientras tanto, spCargar/spCargarRegistros
+// la filtran (para que no "resucite" si el DELETE falló o si otro dispositivo
+// aún no recibió el borrado) y reintentan eliminarla. Así un borrado es
+// permanente aunque una petición a SP falle. Si la MISMA clave se vuelve a
+// crear (mismo trabajador/actividad/fecha), _pushAsg/_regTombClear la quitan
+// de la lápida — nunca se filtra algo que el usuario volvió a crear a propósito.
+// =====================================================
+var _asgTomb=[],_regTomb=[];
+try{_asgTomb=JSON.parse(localStorage.getItem('asg_tomb')||'[]')||[];}catch(e){_asgTomb=[];}
+try{_regTomb=JSON.parse(localStorage.getItem('reg_tomb')||'[]')||[];}catch(e){_regTomb=[];}
+function _asgTombAdd(k){if(k&&_asgTomb.indexOf(k)<0){_asgTomb.push(k);localStorage.setItem('asg_tomb',JSON.stringify(_asgTomb));}}
+function _asgTombClear(k){var i=_asgTomb.indexOf(k);if(i>=0){_asgTomb.splice(i,1);localStorage.setItem('asg_tomb',JSON.stringify(_asgTomb));}}
+function _regTombAdd(k){if(k&&_regTomb.indexOf(k)<0){_regTomb.push(k);localStorage.setItem('reg_tomb',JSON.stringify(_regTomb));}}
+function _regTombClear(k){var i=_regTomb.indexOf(k);if(i>=0){_regTomb.splice(i,1);localStorage.setItem('reg_tomb',JSON.stringify(_regTomb));}}
 // Helper: agregar una entrada a asg con los campos obligatorios v2
 function _pushAsg(entry){
   if(!entry._key)entry._key=_asgKey(entry);
   if(!entry.estado)entry.estado='BORRADOR';
   if(!entry.creadoPor)entry.creadoPor=usuarioLogueado||'';
+  _asgTombClear(entry._key); // si se recrea una clave borrada, deja de estar enterrada
   asg.push(entry);
 }
 async function guardarAsignaciones(){
@@ -1037,18 +1055,24 @@ async function spEscribirReg(r){
 }
 async function spEliminarReg(r){
   if(!SP_READY||!r)return;
-  var token=await _getToken();var digest=await _spGetDigest();
-  var spId=r._spId;
-  var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items";
-  if(!spId&&r.id){
-    var enc=encodeURIComponent("Title eq '"+r.id+"'");
-    var fr=await fetch(listUrl+'?$filter='+enc+'&$select=Id&$top=1',{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
-    var fd=await fr.json();if(fd.value&&fd.value.length)spId=fd.value[0].Id;
+  if(r.id)_regTombAdd(r.id); // marca como pendiente de borrado; se quita al confirmar
+  try{
+    var token=await _getToken();var digest=await _spGetDigest();
+    var spId=r._spId;
+    var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items";
+    if(!spId&&r.id){
+      var enc=encodeURIComponent("Title eq '"+r.id+"'");
+      var fr=await fetch(listUrl+'?$filter='+enc+'&$select=Id&$top=1',{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+      var fd=await fr.json();if(fd.value&&fd.value.length)spId=fd.value[0].Id;
+    }
+    if(!spId){if(r.id)_regTombClear(r.id);return;} // no existe en SP → nada que borrar
+    var hdr={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token,'IF-MATCH':'*','X-HTTP-Method':'DELETE'};
+    var rd=await fetch(listUrl+'('+spId+')',{method:'POST',headers:hdr,body:'{}'});
+    if(rd.ok||rd.status===204||rd.status===404){if(r.id)_regTombClear(r.id);} // borrado confirmado
+    else throw new Error('REG DELETE ('+rd.status+') spId='+spId);
+  }catch(e){
+    console.warn('spEliminarReg (reintento pendiente):',r.id,e.message);throw e;
   }
-  if(!spId)return;
-  var hdr={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token,'IF-MATCH':'*','X-HTTP-Method':'DELETE'};
-  var rd=await fetch(listUrl+'('+spId+')',{method:'POST',headers:hdr,body:'{}'});
-  if(!rd.ok&&rd.status!==204)console.warn('spEliminarReg: DELETE fallo ('+rd.status+') spId='+spId);
 }
 // =====================================================
 // === LISTA PROPIA DE ASIGNACIONES (v2) ===
@@ -1100,9 +1124,19 @@ async function _spAsgListOK(){
     var token=await _getToken();
     var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')?$select=Title",
       {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
-    _SP_ASG_LIST_VERIFIED=r.ok;
-    if(!r.ok)console.info('Lista '+SP_LIST_ASG+' no encontrada — se usa blob como respaldo.');
-  }catch(e){_SP_ASG_LIST_VERIFIED=false;}
+    if(r.ok){_SP_ASG_LIST_VERIFIED=true;}
+    else if(r.status===404){_SP_ASG_LIST_VERIFIED=false;console.info('Lista '+SP_LIST_ASG+' no existe — se usa blob como respaldo.');}
+    else{
+      // Error transitorio (401/429/500/503…): NO cachear como definitivo.
+      // Devolvemos false sólo para ESTE ciclo y reintentamos en el próximo.
+      console.warn('_spAsgListOK: respuesta '+r.status+' — se reintentará en el próximo sync.');
+      return false;
+    }
+  }catch(e){
+    // Error de red: tampoco cachear; reintentar luego.
+    console.warn('_spAsgListOK: error de red ('+e.message+') — se reintentará.');
+    return false;
+  }
   return _SP_ASG_LIST_VERIFIED;
 }
 async function spEscribirAsg(a){
@@ -1135,18 +1169,26 @@ async function spEscribirAsg(a){
 }
 async function spBorrarAsg(a){
   if(!SP_READY||!a)return;
-  var spId=a._spId,token=await _getToken(),digest=await _spGetDigest();
-  var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')/items";
-  if(!spId&&(a._key||a.f)){
-    var key=a._key||_asgKey(a);
-    var fr=await fetch(listUrl+'?$filter='+encodeURIComponent("Title eq '"+key+"'")+'&$select=Id&$top=1',
-      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
-    if(fr.ok){var fd=await fr.json();if(fd.value&&fd.value.length)spId=fd.value[0].Id;}
+  var key=a._key||_asgKey(a);
+  _asgTombAdd(key); // marca como pendiente de borrado; se quita al confirmar
+  try{
+    var spId=a._spId,token=await _getToken(),digest=await _spGetDigest();
+    var listUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_ASG+"')/items";
+    if(!spId){
+      var fr=await fetch(listUrl+'?$filter='+encodeURIComponent("Title eq '"+key+"'")+'&$select=Id&$top=1',
+        {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+      if(fr.ok){var fd=await fr.json();if(fd.value&&fd.value.length)spId=fd.value[0].Id;}
+    }
+    if(!spId){_asgTombClear(key);return;} // no existe en SP → nada que borrar
+    var rd=await fetch(listUrl+'('+spId+')',{method:'POST',headers:{'Accept':'application/json;odata=nometadata',
+      'Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,
+      'Authorization':'Bearer '+token,'IF-MATCH':'*','X-HTTP-Method':'DELETE'},body:'{}'});
+    if(rd.ok||rd.status===204||rd.status===404)_asgTombClear(key); // borrado confirmado
+    else throw new Error('ASG DELETE ('+rd.status+')');
+  }catch(e){
+    // queda en la lápida; spCargar lo filtrará y reintentará en el próximo ciclo
+    console.warn('spBorrarAsg (reintento pendiente):',key,e.message);throw e;
   }
-  if(!spId)return;
-  await fetch(listUrl+'('+spId+')',{method:'POST',headers:{'Accept':'application/json;odata=nometadata',
-    'Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,
-    'Authorization':'Bearer '+token,'IF-MATCH':'*','X-HTTP-Method':'DELETE'},body:'{}'});
 }
 async function spCargarAsignaciones(desde,hasta){
   var token=await _getToken();
@@ -1213,6 +1255,18 @@ async function spCargarRegistros(){
       console.warn('spCargarRegistros: SP devolvió 0 registros pero hay '+reg.length+' locales; se conserva la copia local.');
       return;
     }
+    // Filtrar registros con lápida (borrados aún no confirmados) y reintentar borrarlos.
+    // spCargarRegistros trae la lista COMPLETA, así que una lápida cuya fila ya no
+    // aparece = borrado confirmado → se descarta (evita acumulación indefinida).
+    if(_regTomb.length){
+      var rTombSet={};_regTomb.forEach(function(k){rTombSet[k]=1;});
+      var rResucitar=spRegs.filter(function(x){return x.id&&rTombSet[x.id];});
+      spRegs=spRegs.filter(function(x){return !(x.id&&rTombSet[x.id]);});
+      rResucitar.forEach(function(x){spEliminarReg(x).catch(function(){});}); // reintento
+      var aunEnSP={};rResucitar.forEach(function(x){aunEnSP[x.id]=1;});
+      var antes=_regTomb.length;_regTomb=_regTomb.filter(function(k){return aunEnSP[k];});
+      if(_regTomb.length!==antes)localStorage.setItem('reg_tomb',JSON.stringify(_regTomb));
+    }
     // Construir índices de SP para deduplicación
     var spById={};       // id (Title) → registro SP
     var spByNatKey={};   // "fecha|worker|actId" → 1  (clave natural para registros sin ID)
@@ -1224,6 +1278,7 @@ async function spCargarRegistros(){
     // · Tienen ID y SP NO los tiene aún (escritura pendiente/fallida)
     // · No tienen ID Y no existen en SP por clave natural (realmente nuevos, no migrados)
     var localToKeep=reg.filter(function(x){
+      if(x.id&&_regTomb.indexOf(x.id)>=0)return false; // con lápida → no reintroducir
       if(x.id)return !spById[x.id];
       return !spByNatKey[(x.f||'')+'|'+(x.w||'')+'|'+(x.act||'')];
     });
@@ -1431,9 +1486,27 @@ async function spCargar(){
       var hastaAsg=new Date(hoyAsg);hastaAsg.setDate(hastaAsg.getDate()+30);
       var fmtAsg=function(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');};
       var spAsgRows=await spCargarAsignaciones(fmtAsg(desdeAsg),fmtAsg(hastaAsg));
+      // Filtrar filas con lápida (borrados aún no confirmados en SP) y reintentar borrarlas.
+      // La carga de asg es por ventana de fechas; sólo se puede dar por confirmado
+      // (y descartar la lápida) lo que cae DENTRO de la ventana consultada.
+      if(_asgTomb.length){
+        var tombSet={};_asgTomb.forEach(function(k){tombSet[k]=1;});
+        var aResucitar=spAsgRows.filter(function(a){return tombSet[a._key];});
+        spAsgRows=spAsgRows.filter(function(a){return !tombSet[a._key];});
+        aResucitar.forEach(function(a){spBorrarAsg(a).catch(function(){});}); // reintento
+        var aunEnSP={};aResucitar.forEach(function(a){aunEnSP[a._key]=1;});
+        var desdeStr=fmtAsg(desdeAsg),hastaStr=fmtAsg(hastaAsg);
+        var antesAsg=_asgTomb.length;
+        _asgTomb=_asgTomb.filter(function(k){
+          var f=(k.split('_')[1]||''); // ASG_YYYY-MM-DD_...
+          var dentroVentana=f>=desdeStr&&f<=hastaStr;
+          return aunEnSP[k]||!dentroVentana; // conservar si sigue en SP o está fuera de la ventana
+        });
+        if(_asgTomb.length!==antesAsg)localStorage.setItem('asg_tomb',JSON.stringify(_asgTomb));
+      }
       // Conservar entradas locales nuevas que aún no subieron (sin _hash = nunca sincronizadas)
       var spByKeyAsg={};spAsgRows.forEach(function(a){spByKeyAsg[a._key]=1;});
-      var localPendAsg=asg.filter(function(a){return !a._hash&&!spByKeyAsg[a._key||_asgKey(a)];});
+      var localPendAsg=asg.filter(function(a){return !a._hash&&!spByKeyAsg[a._key||_asgKey(a)]&&_asgTomb.indexOf(a._key||_asgKey(a))<0;});
       asg=spAsgRows.concat(localPendAsg);
       localStorage.setItem('asg',JSON.stringify(asg));
       console.log('ASG desde lista propia: '+spAsgRows.length+(localPendAsg.length?' + '+localPendAsg.length+' locales pendientes':''));
@@ -3571,12 +3644,38 @@ function eliminarCargo(id){if(!soloAdmin())return;
   guardarLS();renderGCargos();
 }
 
+// Borra en SP, por lotes de 5, las asignaciones y registros indicados.
+// Usa las listas fila-por-fila (con lápidas para que el borrado sea permanente
+// aunque falle una petición). Si la lista de asignaciones NO existe (404
+// confirmado), cae al blob. La huella siempre va por blob.
+async function _spBorrarDatos(asgDel,regDel,asgRestante,hueRestante){
+  await _spAsgListOK(); // intenta poblar el estado de la lista nueva
+  // --- Asignaciones ---
+  if(_SP_ASG_LIST_VERIFIED===false){
+    await spEscribirItem('asg',asgRestante); // lista no existe → blob seguro
+  }else{
+    // lista existe o estado incierto → borrar filas (las lápidas garantizan
+    // que no resuciten aunque una petición falle o la lista se verifique luego)
+    for(var i=0;i<asgDel.length;i+=5){
+      await Promise.all(asgDel.slice(i,i+5).map(function(a){return spBorrarAsg(a).catch(function(){});}));
+    }
+  }
+  // --- Registros (siempre fila-por-fila en ControlHoras_Registros) ---
+  for(var j=0;j<regDel.length;j+=5){
+    await Promise.all(regDel.slice(j,j+5).map(function(r){return spEliminarReg(r).catch(function(){});}));
+  }
+  // --- Huella (sigue en blob) ---
+  await spEscribirItem('hue',hueRestante);
+}
 async function limpiar(){
   if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para limpiar registros.');return;}
   if(!confirm('¿Borrar todos los registros de '+fechaSel+'?\nEsta acción no se puede deshacer.'))return;
   // Copia de seguridad de emergencia antes de borrar (recuperable desde
   // "🕘 Recuperar asignaciones" si fue un error).
   if(SP_READY)await spBackupEmergenciaAsg();
+  // Snapshot de lo que se va a borrar (para eliminarlo también en SP)
+  var asgDel=asg.filter(function(a){return a.f===fechaSel});
+  var regDel=reg.filter(function(r){return r.f===fechaSel});
   // Eliminar en memoria
   asg=asg.filter(function(a){return a.f!==fechaSel});
   reg=reg.filter(function(r){return r.f!==fechaSel});
@@ -3592,11 +3691,10 @@ async function limpiar(){
     SP_GUARDANDO=true; // bloquea auto-sync mientras escribe
     spEstado('☁️ Borrando en SP...');
     try{
-      await spEscribirItem('asg',asg);
-      await spEscribirItem('reg',reg);
-      await spEscribirItem('hue',hue);
+      await _spBorrarDatos(asgDel,regDel,asg,hue);
       spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
-      toast('✅ Registros del '+fechaSel+' eliminados y sincronizados.');
+      var pend=_asgTomb.length+_regTomb.length;
+      toast('✅ Registros del '+fechaSel+' eliminados'+(pend?'. '+pend+' borrado(s) se reintentarán en el próximo sync.':' y sincronizados.'));
     }catch(e){
       alert('Registros borrados localmente, pero error al sincronizar SP:\n'+e.message);
     }finally{
@@ -3612,6 +3710,7 @@ async function limpiarTodosRegistros(){
   // Copia de seguridad de emergencia antes de borrar (recuperable desde
   // "🕘 Recuperar asignaciones" si fue un error).
   if(SP_READY)await spBackupEmergenciaAsg();
+  var asgDel=asg.slice(),regDel=reg.slice(); // snapshot completo para borrar en SP
   asg=[];reg=[];hue={};
   localStorage.setItem('asg',JSON.stringify(asg));
   localStorage.setItem('reg',JSON.stringify(reg));
@@ -3621,11 +3720,10 @@ async function limpiarTodosRegistros(){
     SP_GUARDANDO=true;
     spEstado('☁️ Borrando registros en SP...');
     try{
-      await spEscribirItem('asg',asg);
-      await spEscribirItem('reg',reg);
-      await spEscribirItem('hue',hue);
+      await _spBorrarDatos(asgDel,regDel,asg,hue);
       spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
-      toast('✅ Todos los registros eliminados y sincronizados.');
+      var pend=_asgTomb.length+_regTomb.length;
+      toast('✅ Todos los registros eliminados'+(pend?'. '+pend+' borrado(s) se reintentarán en el próximo sync.':' y sincronizados.'));
     }catch(e){
       alert('Registros borrados localmente, pero error al sincronizar SP:\n'+e.message);
     }finally{SP_GUARDANDO=false;}
@@ -4098,7 +4196,7 @@ function confirmarImportAsg(nuevas){
   nuevas.forEach(function(a){
     var existe=asg.find(function(x){return x.f===a.fecha&&x.w===a.trb.codigo&&String(x.act)===String(a.act.id)&&!x.na;});
     if(existe){dup++;return;}
-    asg.push({f:a.fecha,w:a.trb.codigo,act:a.act.id,uni:a.act.unidad||'',h:a.h,x:a.x,mods:a.mods,na:false,mt:'',obs:a.obs||'',ref:a.ref||'',rend:null});
+    _pushAsg({f:a.fecha,w:a.trb.codigo,act:a.act.id,uni:a.act.unidad||'',h:a.h,x:a.x,mods:a.mods,na:false,mt:'',obs:a.obs||'',ref:a.ref||'',rend:null});
     cnt++;
   });
   cerrarModal();guardarLS();stats();renderT1();
@@ -4283,7 +4381,7 @@ function doAsignacionMasiva(){
     if(existing){
       existing.h=h;existing.x=esExtra;existing.mods=mods;actualizados++;
     }else{
-      asg.push({f:fecha,w:cod,n:trb.nombre,ar:trb.area,act:actId,
+      _pushAsg({f:fecha,w:cod,n:trb.nombre,ar:trb.area,act:actId,
         uni:act?act.unidad:'',cat:act?act.categoria:'',sub:act?act.subcategoria:'',
         h:h,x:esExtra,mods:mods,na:false});
       nuevos++;
@@ -4581,7 +4679,9 @@ function restaurarAsgVersion(verIdx,fechas){
     if(fechas.indexOf(a.f)<0)return;
     var existe=asg.some(function(x){return x.f===a.f&&x.w===a.w&&String(x.act)===String(a.act)&&!!x.na===!!a.na;});
     if(existe){yaExistian++;return;}
-    asg.push(JSON.parse(JSON.stringify(a)));agregados++;
+    var copia=JSON.parse(JSON.stringify(a));
+    delete copia._spId;delete copia._hash; // re-resolver por Title al re-sincronizar
+    _pushAsg(copia);agregados++;
   });
   guardarLS();
   cerrarModal();
