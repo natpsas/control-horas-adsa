@@ -155,7 +155,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div id="appMain" style="display:none">
 <div class="container">
 <header>
-<div><h1>🫐 Arándanos de San Antonio</h1><p>Control de Tiempo y Actividades v5</p></div>
+<div><h1>🫐 Arándanos de San Antonio</h1><p>Control de Tiempo y Actividades <span id="appVerBadge" style="display:inline-block;background:rgba(255,255,255,.22);color:#fff;font-size:11px;font-weight:700;padding:1px 8px;border-radius:10px;margin-left:4px;vertical-align:middle">cargando…</span></p></div>
 <div class="hdr-right">
 <span id="usrLogged" class="usr-badge" onclick="cerrarSesion()"></span>
 <input type="date" id="fechaTrabajo" class="date-sel" onchange="cambiarFecha()">
@@ -417,6 +417,9 @@ var asg=[],reg=[],hue={},usr=[];
 var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
+// === VERSIÓN — actualizar al publicar una nueva versión ===
+var APP_VERSION='v6.1 · 2026-06-17';
+function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
 var PERMISOS={
@@ -457,6 +460,7 @@ function intentarLogin(){
 }
 function mostrarApp(){
   document.getElementById('loginScreen').style.display='none';document.getElementById('appMain').style.display='block';
+  pintarVersion();
   var rolLabel='';
   if(usuarioLogueado==='Admin')rolLabel=' [Admin]';
   else{var u2=usr.find(function(x){return x.usr===usuarioLogueado});if(u2&&u2.rol)rolLabel=' ['+u2.rol+']';}
