@@ -418,7 +418,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.2 · 2026-06-17';
+var APP_VERSION='v6.3 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1926,7 +1926,7 @@ function hInput(id,val,maxH,onChg){
   val=parseFloat(val)||0;
   var h=Math.floor(val);
   var mRaw=Math.round((val-h)*60);
-  var opts=[0,15,30,45];
+  var opts=[0,10,20,30,40,50];
   var m=opts.reduce(function(p,c){return Math.abs(c-mRaw)<Math.abs(p-mRaw)?c:p;});
   if(m>=60){h++;m=0;}
   var ev=onChg?" onchange='"+onChg+"' oninput='"+onChg+"'":'';
@@ -1950,7 +1950,7 @@ function setHInput(id,val){
   val=parseFloat(val)||0;
   var h=Math.floor(val);
   var mRaw=Math.round((val-h)*60);
-  var m=[0,15,30,45].reduce(function(p,c){return Math.abs(c-mRaw)<Math.abs(p-mRaw)?c:p;});
+  var m=[0,10,20,30,40,50].reduce(function(p,c){return Math.abs(c-mRaw)<Math.abs(p-mRaw)?c:p;});
   if(m>=60){h++;m=0;}
   var hEl=document.getElementById(id+'_h');var mEl=document.getElementById(id+'_m');
   if(hEl)hEl.value=h;
@@ -4228,8 +4228,8 @@ function modalAsignacionMasiva(){
   // ---- PASO 1: Fecha + Actividad + valores por defecto ----
   mh+='<div style="background:#eff6ff;border:2px solid #bfdbfe;border-radius:10px;padding:14px;margin-bottom:14px">';
   mh+='<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:10px">';
-  mh+='<div class="fg" style="margin:0;min-width:140px"><label>📅 Fecha</label><input type="date" id="amFecha" value="'+fechaSel+'"></div>';
-  mh+='<div class="fg" style="margin:0;min-width:120px"><label>⏱ Horas (por defecto)</label><input type="number" id="amH" value="8" min="0.5" max="24" step="0.5" onchange="amAplicarDefaults()"></div>';
+  mh+='<div class="fg" style="margin:0;min-width:140px"><label>📅 Fecha</label><input type="date" id="amFecha" value="'+fechaSel+'" onchange="amSyncHorasDia()"></div>';
+  mh+='<div class="fg" style="margin:0;min-width:120px"><label>⏱ Horas (por defecto)</label><input type="number" id="amH" value="'+amHorasDefecto(fechaSel)+'" min="0.5" max="24" step="0.5" onchange="amAplicarDefaults()"></div>';
   mh+='<div class="fg" style="margin:0;min-width:120px"><label>Tipo (por defecto)</label><select id="amTipo" onchange="amAplicarDefaults()"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
   mh+='</div>';
   mh+='<div class="fg" style="margin:0 0 10px"><label style="font-size:13px">🎯 Actividad (selecciona 1)</label>';
@@ -4316,6 +4316,19 @@ function amActualizarCount(){
   var n=document.querySelectorAll('.am-trb:checked').length;
   var el=document.getElementById('amCount');
   if(el)el.textContent=n+(n===1?' seleccionado':' seleccionados');
+}
+// Horas por defecto según el día: sábado = 4h, cualquier otro día = 8h.
+function amHorasDefecto(f){
+  if(!f)return 8;
+  var d=new Date(f+'T12:00:00');
+  return d.getDay()===6?4:8; // 6 = sábado
+}
+// Al cambiar la fecha en el form, recalcula las horas por defecto y las aplica
+// a los trabajadores ya seleccionados.
+function amSyncHorasDia(){
+  var fEl=document.getElementById('amFecha');var hEl=document.getElementById('amH');
+  if(fEl&&hEl)hEl.value=amHorasDefecto(fEl.value);
+  amAplicarDefaults();
 }
 function amAplicarDefaults(){
   var h=document.getElementById('amH').value||8;
