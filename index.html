@@ -163,6 +163,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="stat-mini"><strong id="s2">0</strong>Asignados</div>
 <div class="stat-mini" style="background:rgba(255,200,0,.3)"><strong id="s3">0</strong>Sin mód.</div>
 <button onclick="spSincronizarManual()" title="Sincronizar con SharePoint" style="background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:10px">🔄 SP</button>
+<div id="spPendBadge" onclick="spSincronizarManual()" title="Estado de subida a SharePoint" style="display:none;font-size:10px;font-weight:700;padding:2px 8px;border-radius:9px;cursor:pointer"></div>
 <div id="saveStatus" style="font-size:10px;opacity:.5;color:rgba(255,255,255,.7)">💾</div>
 </div>
 </header>
@@ -315,6 +316,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <button class="btn btn-p" onclick="expCSV()">📥 Exportar Excel</button>
+    <button class="btn btn-s" onclick="expNominaCSV()" style="background:#276749;border-color:#276749" title="Exporta el rango como CSV con el formato de nómina (fecha de pago, semana, jornal/extras...)">🧾 CSV Nómina</button>
     <button class="btn btn-d" onclick="archivarPeriodo()" style="background:#744210;border-color:#744210" title="Exporta el rango a Excel y luego lo elimina de memoria">📦 Archivar y limpiar</button>
   </div>
   <hr style="border:none;border-top:1px solid #e2e8f0;margin:10px 0">
@@ -418,7 +420,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.3 · 2026-06-17';
+var APP_VERSION='v6.5 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -486,6 +488,7 @@ function init(){
   spInit().then(function(){return spCargar()}).then(function(){
     poblarFiltros();stats();renderT1();renderGestion();
     spEstado('\u2601\uFE0F SP '+new Date().toLocaleTimeString(),true);
+    actualizarPendientesSP();
   }).catch(function(e){
     console.warn('SharePoint no disponible:',e.message);
     spEstado('\uD83D\uDCBE Local (sin SP)');
@@ -497,7 +500,7 @@ function init(){
     var el=document.getElementById('saveStatus');
     if(el){el.style.opacity='1';setTimeout(function(){el.style.opacity='.5'},3000)}
   },30000);
-  // Auto-sincronizar desde SP cada 60 seg (recibir cambios de otros usuarios)
+  // Auto-sincronizar desde SP cada 30 seg (recibir cambios de otros usuarios)
   // IMPORTANTE: primero guarda local→SP, luego carga SP→local para no perder datos
   setInterval(function(){
     if(!SP_READY||SP_GUARDANDO||limpiando)return;
@@ -509,11 +512,13 @@ function init(){
       var a=document.querySelector('.tc.active');
       if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
       spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+      actualizarPendientesSP();
     }).catch(function(e){
       console.warn('Auto-sync SP:',e.message);
       spEstado('⚠️ Error SP: '+e.message.substring(0,40));
+      actualizarPendientesSP();
     });
-  },60000);
+  },30000);
   // Sincronizar al volver a la pestaña (ej: después de una llamada)
   // IMPORTANTE: primero guarda local→SP, luego carga SP→local para no perder datos
   document.addEventListener('visibilitychange',function(){
@@ -526,6 +531,7 @@ function init(){
         var a=document.querySelector('.tc.active');
         if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
         spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+        actualizarPendientesSP();
       }).catch(function(e){console.warn('Visibility-sync SP:',e.message)});
     }
   });
@@ -568,6 +574,7 @@ function guardarLS(){
   localStorage.setItem('MOD_custom',JSON.stringify(MOD));localStorage.setItem('UNI_custom',JSON.stringify(UNI));
   localStorage.setItem('CARGOS_custom',JSON.stringify(CARGOS));localStorage.setItem('aprobMasiva',JSON.stringify(aprobacionMasivaActiva));localStorage.setItem('PERMISOS_custom',JSON.stringify(PERMISOS));
   checkLSCapacidad();
+  actualizarPendientesSP(); // refleja al instante que hay cambios sin subir
   // Guardar en SharePoint si está conectado
   if(SP_READY){
     spGuardar().then(function(){
@@ -575,7 +582,7 @@ function guardarLS(){
     }).catch(function(e){
       spEstado('⚠️ SP: '+e.message);
       console.warn('SP guardar:',e);
-    });
+    }).finally(function(){actualizarPendientesSP();});
   }
 }
 // =====================================================
@@ -595,6 +602,37 @@ function _asgTombAdd(k){if(k&&_asgTomb.indexOf(k)<0){_asgTomb.push(k);localStora
 function _asgTombClear(k){var i=_asgTomb.indexOf(k);if(i>=0){_asgTomb.splice(i,1);localStorage.setItem('asg_tomb',JSON.stringify(_asgTomb));}}
 function _regTombAdd(k){if(k&&_regTomb.indexOf(k)<0){_regTomb.push(k);localStorage.setItem('reg_tomb',JSON.stringify(_regTomb));}}
 function _regTombClear(k){var i=_regTomb.indexOf(k);if(i>=0){_regTomb.splice(i,1);localStorage.setItem('reg_tomb',JSON.stringify(_regTomb));}}
+// === PENDIENTES DE SUBIR A SHAREPOINT (anti "Sincronizado" falso) ===
+// Cuenta lo que cambió localmente y aún NO está confirmado en SP:
+//  · asignaciones cuyo hash no coincide con el último confirmado (o nunca subió)
+//  · registros consolidados sin _spId (nunca subieron)
+//  · borrados pendientes (lápidas)
+function _pendientesSP(){
+  var n=0;
+  try{
+    if(_SP_ASG_LIST_VERIFIED===true){
+      asg.forEach(function(a){if(!a._key)a._key=_asgKey(a);if(!a._hash||a._hash!==_asgHash(a))n++;});
+    }
+    reg.forEach(function(r){if(r.id&&!r._spId)n++;});
+    n+=_asgTomb.length+_regTomb.length;
+  }catch(e){}
+  return n;
+}
+function actualizarPendientesSP(){
+  var el=document.getElementById('spPendBadge');if(!el)return;
+  if(!SP_READY){el.style.display='none';return;}
+  var n=_pendientesSP();
+  el.style.display='';
+  if(n>0){
+    el.textContent='⚠️ '+n+' sin subir';
+    el.style.background='#c53030';el.style.color='#fff';
+    el.title='Hay '+n+' cambio(s) que aún NO están en SharePoint. Clic para sincronizar ahora.';
+  }else{
+    el.textContent='✓ en SP';
+    el.style.background='rgba(72,187,120,.45)';el.style.color='#fff';
+    el.title='Todo lo local está confirmado en SharePoint.';
+  }
+}
 // Helper: agregar una entrada a asg con los campos obligatorios v2
 function _pushAsg(entry){
   if(!entry._key)entry._key=_asgKey(entry);
@@ -1591,7 +1629,7 @@ async function spGuardar(){
         await spEscribirItem('hue',hueMerged);
       }
     }
-  }finally{SP_GUARDANDO=false}
+  }finally{SP_GUARDANDO=false;actualizarPendientesSP();}
 }
 
 function spSincronizarManual(){
@@ -1605,6 +1643,7 @@ function spSincronizarManual(){
       var a=document.querySelector('.tc.active');
       if(a){if(a.id==='t2')renderT2();if(a.id==='t3')renderT3();}
       spEstado('☁️ Sincronizado '+new Date().toLocaleTimeString(),true);
+      actualizarPendientesSP();
     }).catch(function(e){alert('Error al sincronizar:\n'+e.message)});
   });
 }
@@ -3301,22 +3340,53 @@ function renderT4(){
     html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-weight:600">'+ar+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px">'+b.hN.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+b.hE.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+(b.hN+b.hE).toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px;color:#276749">'+b.ap+'</td><td style="text-align:center;padding:6px 8px;color:#92400e">'+b.pend+'</td></tr>';
   });
   html+='</tbody></table></div>';
-  // --- Tabla por Actividad ---
+  // --- Tabla por Actividad (agrupada por Unidad de negocio) ---
   var byAct={};
   base.forEach(function(r){
-    var key=(r.cat||'')+'||'+(r.sub||'');
-    if(!byAct[key])byAct[key]={cat:r.cat||'',sub:r.sub||'',wrks:{},h:0,rend:0,rendN:0,ind:r.ind||''};
+    var key=(r.uni||'')+'||'+(r.cat||'')+'||'+(r.sub||'');
+    if(!byAct[key])byAct[key]={uni:r.uni||'(Sin unidad)',cat:r.cat||'',sub:r.sub||'',wrks:{},h:0,rend:0,rendN:0,ind:r.ind||''};
     var b=byAct[key];b.wrks[r.w]=1;b.h+=r.hr;
     if(r.rend){b.rend+=r.rend;b.rendN++;}
   });
-  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Por Actividad</h3>';
+  // Agrupar actividades por unidad de negocio
+  var actsPorUni={};
+  Object.keys(byAct).forEach(function(k){var b=byAct[k];if(!actsPorUni[b.uni])actsPorUni[b.uni]=[];actsPorUni[b.uni].push(b);});
+  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Por Actividad <span style="font-weight:400;color:#a0aec0;font-size:11px">(por unidad de negocio)</span></h3>';
   html+='<div style="overflow-x:auto;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
   html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Categoría</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Actividad</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trab.</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Rendim. total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Prom/trab</th></tr></thead><tbody>';
-  Object.keys(byAct).sort().forEach(function(k){var b=byAct[k];
-    var promH=b.h/Object.keys(b.wrks).length;
-    var rendStr=b.rendN>0?b.rend+' '+indLabel(b.ind):'-';
-    html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-size:11px;color:#718096">'+b.cat+'</td><td style="padding:6px 8px;font-weight:600">'+b.sub+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+b.h.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+rendStr+'</td><td style="text-align:center;padding:6px 8px">'+promH.toFixed(1)+'h</td></tr>';
+  Object.keys(actsPorUni).sort().forEach(function(uni){
+    var lista=actsPorUni[uni];
+    var uniH=0,uniWrks={};lista.forEach(function(b){uniH+=b.h;Object.keys(b.wrks).forEach(function(w){uniWrks[w]=1;});});
+    html+='<tr><td colspan="6" style="background:#eef2ff;color:#3730a3;font-weight:700;padding:5px 8px;letter-spacing:.3px">🏢 '+uni+' <span style="font-weight:400;color:#6366f1">— '+uniH.toFixed(1)+'h · '+Object.keys(uniWrks).length+' trab.</span></td></tr>';
+    lista.sort(function(a,b){return (a.cat+a.sub).localeCompare(b.cat+b.sub);}).forEach(function(b){
+      var promH=b.h/Object.keys(b.wrks).length;
+      var rendStr=b.rendN>0?b.rend+' '+indLabel(b.ind):'-';
+      html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-size:11px;color:#718096">'+b.cat+'</td><td style="padding:6px 8px;font-weight:600">'+b.sub+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+b.h.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+rendStr+'</td><td style="text-align:center;padding:6px 8px">'+promH.toFixed(1)+'h</td></tr>';
+    });
   });
+  html+='</tbody></table></div>';
+  // --- Horas por Módulo (hh y %) ---
+  // Las horas de un registro se reparten en partes iguales entre sus módulos,
+  // así el % suma 100. Registros sin módulo van a "(Sin módulo)".
+  var byMod={},totModH=0;
+  base.forEach(function(r){
+    var mods=(r.mods&&r.mods.length)?r.mods:['(Sin módulo)'];
+    var hPart=(r.hr||0)/mods.length;
+    mods.forEach(function(mid){
+      var nombre=mid==='(Sin módulo)'?mid:((MOD.find(function(m){return m.id===mid})||{}).nombre||mid);
+      if(!byMod[mid])byMod[mid]={nombre:nombre,h:0,wrks:{}};
+      byMod[mid].h+=hPart;byMod[mid].wrks[r.w]=1;totModH+=hPart;
+    });
+  });
+  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Horas por Módulo <span style="font-weight:400;color:#a0aec0;font-size:11px">(hh y %)</span></h3>';
+  html+='<div style="overflow-x:auto;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Módulo</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trab.</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Horas (hh)</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">% del total</th></tr></thead><tbody>';
+  Object.keys(byMod).sort(function(a,b){return byMod[b].h-byMod[a].h;}).forEach(function(mid){
+    var b=byMod[mid];var pct=totModH>0?(b.h/totModH*100):0;
+    var barra='<div style="display:inline-block;width:60px;height:8px;background:#edf2f7;border-radius:4px;vertical-align:middle;margin-left:6px;overflow:hidden"><div style="width:'+pct.toFixed(0)+'%;height:100%;background:#7c3aed"></div></div>';
+    html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-weight:600">'+b.nombre+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+b.h.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+pct.toFixed(1)+'%'+barra+'</td></tr>';
+  });
+  html+='<tr style="border-top:2px solid #e2e8f0;font-weight:800;background:#faf5ff"><td style="padding:7px 8px">TOTAL</td><td></td><td style="text-align:center;padding:7px 8px">'+totModH.toFixed(1)+'h</td><td style="text-align:center;padding:7px 8px">100%</td></tr>';
   html+='</tbody></table></div>';
   // --- Ausencias en el período ---
   var inasPer=asg.filter(function(a){
@@ -3516,6 +3586,64 @@ function expCSV(){
   var nombre='registros-'+(f.desde&&f.hasta?f.desde+(f.desde!==f.hasta?'_'+f.hasta:''):'todo')+'.xlsx';
   XLSX.writeFile(wb,nombre);
   toast('\u2705 Excel exportado ('+f.reg.length+' registros)');
+}
+// === CSV N\u00d3MINA ===
+function _fmtFechaCorta(d){return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');}
+// Fecha de pago = primer S\u00c1BADO en o despu\u00e9s de (fecha del d\u00eda + 2).
+// Equivale a: el d\u00eda se paga el s\u00e1bado de su semana de n\u00f3mina, donde la semana
+// va del viernes de la semana anterior al jueves de la semana en curso.
+function _fechaPagoSabado(fStr){
+  var d=new Date(fStr+'T12:00:00');d.setDate(d.getDate()+2);
+  while(d.getDay()!==6)d.setDate(d.getDate()+1); // 6 = s\u00e1bado
+  return d;
+}
+// Semana de n\u00f3mina en formato YY_WW, anclada a: s\u00e1bado 13-jun-2026 = semana 24
+// (per\u00edodo viernes 5-jun a jueves 11-jun, seg\u00fan las planillas 2026_24).
+function _semanaNomina(fStr){
+  var sab=_fechaPagoSabado(fStr);
+  var ancla=new Date('2026-06-13T12:00:00'); // semana 24 de 2026
+  var diff=Math.round((sab.getTime()-ancla.getTime())/(7*86400000));
+  var ww=24+diff;var yy=sab.getFullYear()%100;
+  return String(yy<10?'0'+yy:yy)+'_'+(ww<10?'0'+ww:ww);
+}
+function _csvCampo(v){v=(v===null||v===undefined)?'':String(v);return '"'+v.replace(/"/g,'""')+'"';}
+function expNominaCSV(){
+  var f=filtrarParaExport(); // usa el rango de fechas de Reportes (Desde / Hasta)
+  // Solo registros APROBADOS (los pendientes/rechazados no se pagan)
+  var aprob=f.reg.filter(function(r){return r.st==='aprobado';});
+  if(!aprob.length){
+    var pend=f.reg.filter(function(r){return r.st==='pendiente';}).length;
+    alert('Sin registros APROBADOS en el rango seleccionado.'+(pend?'\n\nHay '+pend+' pendiente(s) de aprobar \u2014 el CSV de n\u00f3mina solo incluye aprobados.':'\nEleg\u00ed un rango con datos en Reportes \u2192 Exportar / Archivar.'));
+    return;
+  }
+  var cols=['FECHA DE PAGO','No Hoja Asistencia','FECHA','SEMANA','\u00c1REA','TRABAJADOR','DETALLE ACTIVIDAD','FINCA','MODULO','JORNAL O KILOS','HORAS','HH EXTRAS','JORNAL','KILOS','OBSERVACIONES'];
+  var csv=cols.map(_csvCampo).join(',')+'\n';
+  var rows=aprob.slice().sort(function(a,b){return a.f!==b.f?a.f.localeCompare(b.f):(a.n||'').localeCompare(b.n||'');});
+  rows.forEach(function(r){
+    var esExtra=r.tp==='EXTRAS';
+    var fila=[
+      _fmtFechaCorta(_fechaPagoSabado(r.f)), // FECHA DE PAGO (s\u00e1bado de la semana)
+      '',                                    // No Hoja Asistencia (en blanco)
+      r.f,                                   // FECHA del d\u00eda
+      _semanaNomina(r.f),                    // SEMANA YY_WW
+      r.w,                                   // \u00c1REA = c\u00f3digo del empleado (seg\u00fan especificaci\u00f3n)
+      r.n||'',                               // TRABAJADOR
+      r.sub||'',                             // DETALLE ACTIVIDAD
+      '',                                    // FINCA (en blanco)
+      (r.mods||[]).join(', '),               // MODULO
+      esExtra?'EXTRAS':'JORNAL',             // JORNAL O KILOS
+      esExtra?'':(r.hr||0),                  // HORAS (jornal normal)
+      esExtra?(r.hr||0):'',                  // HH EXTRAS
+      Math.round(((r.hr||0)/8)*10000)/10000, // JORNAL = horas / 8 (fracción de jornada)
+      0,                                     // KILOS (la plantilla trae 0)
+      r.obs||''                              // OBSERVACIONES (las de la fila)
+    ];
+    csv+=fila.map(_csvCampo).join(',')+'\n';
+  });
+  var b=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
+  var l=document.createElement('a');l.href=URL.createObjectURL(b);
+  l.download='nomina-'+(f.desde||'todo')+(f.hasta&&f.hasta!==f.desde?'_'+f.hasta:'')+'.csv';l.click();
+  toast('\u2705 CSV de n\u00f3mina exportado ('+aprob.length+' filas aprobadas)');
 }
 function expJSON(){var data={fecha:new Date().toISOString(),asg:asg,reg:reg,hue:hue,TRB:TRB,ACT:ACT,MOD:MOD,UNI:UNI,CARGOS:CARGOS,usr:usr};var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='backup-'+fechaSel+'.json';l.click()}
 function impJSON(){document.getElementById('impFile').click()}
