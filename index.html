@@ -420,7 +420,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.5 · 2026-06-17';
+var APP_VERSION='v6.6 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -4342,27 +4342,31 @@ function confirmarImportAsg(nuevas){
   toast('✅ '+cnt+' asignaciones cargadas'+(dup?' ('+dup+' duplicadas omitidas)':''));
   window._asgPreview=null;
 }
+var _amMix=[]; // mix de actividades (cada una con módulos, horas y tipo) a asignar
 function modalAsignacionMasiva(){
   if(!soloAdmin())return;
+  _amMix=[];
   var areas={};
   TRB.filter(function(t){return t.activo}).forEach(function(t){
     if(!areas[t.area])areas[t.area]=[];
     areas[t.area].push(t);
   });
+  var lim=amHorasDefecto(fechaSel);
   var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:920px;width:98%;max-height:92vh;overflow:auto">';
-  mh+='<h2>👥 Asignación Masiva</h2>';
-  mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">1️⃣ Elige fecha y actividad &nbsp;→&nbsp; 2️⃣ Define horas/tipo por defecto y módulos &nbsp;→&nbsp; 3️⃣ Marca trabajadores (puedes ajustar las horas de cada uno).</p>';
+  mh+='<h2>👥 Asignación Masiva — Mix de actividades</h2>';
+  mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">1️⃣ Armá el <b>mix</b>: agregá actividades con sus módulos y horas &nbsp;→&nbsp; 2️⃣ Elegí las personas. Cada persona recibe <b>todas</b> las actividades del mix.</p>';
 
-  // ---- PASO 1: Fecha + Actividad + valores por defecto ----
+  // ---- PASO 1: Fecha + constructor del mix ----
   mh+='<div style="background:#eff6ff;border:2px solid #bfdbfe;border-radius:10px;padding:14px;margin-bottom:14px">';
-  mh+='<div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin-bottom:10px">';
-  mh+='<div class="fg" style="margin:0;min-width:140px"><label>📅 Fecha</label><input type="date" id="amFecha" value="'+fechaSel+'" onchange="amSyncHorasDia()"></div>';
-  mh+='<div class="fg" style="margin:0;min-width:120px"><label>⏱ Horas (por defecto)</label><input type="number" id="amH" value="'+amHorasDefecto(fechaSel)+'" min="0.5" max="24" step="0.5" onchange="amAplicarDefaults()"></div>';
-  mh+='<div class="fg" style="margin:0;min-width:120px"><label>Tipo (por defecto)</label><select id="amTipo" onchange="amAplicarDefaults()"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
+  mh+='<div style="display:flex;flex-wrap:wrap;gap:14px;align-items:flex-end;margin-bottom:10px">';
+  mh+='<div class="fg" style="margin:0;min-width:150px"><label>📅 Fecha</label><input type="date" id="amFecha" value="'+fechaSel+'" onchange="amSyncHorasDia()"></div>';
+  mh+='<div style="font-size:12px;color:#4a5568;font-weight:600;padding-bottom:8px">Jornada máx: <b id="amLimVal" style="color:#2b6cb0">'+lim+'h</b></div>';
   mh+='</div>';
-  mh+='<div class="fg" style="margin:0 0 10px"><label style="font-size:13px">🎯 Actividad (selecciona 1)</label>';
+  // Selector para agregar una actividad al mix
+  mh+='<div style="border:1.5px dashed #93c5fd;border-radius:8px;padding:10px;background:#fff">';
+  mh+='<label style="font-size:12px;font-weight:700;color:#2b6cb0;display:block;margin-bottom:4px">➕ Agregar actividad al mix</label>';
   mh+='<input type="text" id="amBusqAct" placeholder="🔍 Buscar actividad por nombre, código, categoría o unidad..." oninput="amBuscarAct()" style="margin-bottom:4px">';
-  mh+='<select id="amAct" onchange="amCambioAct()" size="6" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
+  mh+='<select id="amAct" onchange="amCambioAct()" size="5" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
   mh+='<option value="">-- Selecciona actividad --</option>';
   var lastUni='';
   ACT.filter(function(a){return a.activo}).forEach(function(a){
@@ -4370,14 +4374,18 @@ function modalAsignacionMasiva(){
     mh+='<option value="'+a.id+'">'+(a.codigo?'['+a.codigo+'] ':'')+a.subcategoria+'</option>';
   });
   mh+='</select>';
+  mh+='<div style="margin-top:6px"><label style="font-size:11px">📦 Módulos';
+  mh+=' <button type="button" class="btn btn-sm" style="background:#edf2f7;font-size:10px" onclick="amSelAllMods()">Todos</button>';
+  mh+=' <button type="button" class="btn btn-sm" style="background:#fff5f5;color:#c53030;font-size:10px" onclick="amDeselMods()">Ninguno</button></label>';
+  mh+='<div class="modbox" id="amMods" style="background:#fff"><p style="font-size:11px;color:#a0aec0">Selecciona una actividad para ver módulos</p></div></div>';
+  mh+='<div style="display:flex;gap:10px;align-items:flex-end;margin-top:8px;flex-wrap:wrap">';
+  mh+='<div class="fg" style="margin:0;width:110px"><label>⏱ Horas</label><input type="number" id="amH" value="'+lim+'" min="0.17" max="24" step="0.5"></div>';
+  mh+='<div class="fg" style="margin:0;width:120px"><label>Tipo</label><select id="amTipo"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></div>';
+  mh+='<button type="button" class="btn btn-s btn-sm" style="margin-bottom:2px" onclick="amAddToMix()">➕ Agregar al mix</button>';
   mh+='</div>';
-  // Módulos
-  mh+='<div class="fg" style="margin:0"><label>📦 Módulos para esta actividad';
-  mh+=' <button type="button" class="btn btn-sm" style="background:#fff;font-size:10px" onclick="amSelAllMods()">Sel. todos</button>';
-  mh+=' <button type="button" class="btn btn-sm" style="background:#fff5f5;color:#c53030;font-size:10px" onclick="amDeselMods()">Ninguno</button>';
-  mh+='</label>';
-  mh+='<div class="modbox" id="amMods" style="background:#fff"><p style="font-size:11px;color:#a0aec0">Selecciona una actividad para ver módulos</p></div>';
-  mh+='</div>';
+  mh+='</div>'; // fin selector
+  // Lista del mix + total
+  mh+='<div id="amMixBox" style="margin-top:10px"></div>';
   mh+='</div>'; // fin paso 1
 
   // ---- PASO 2: Trabajadores ----
@@ -4392,19 +4400,17 @@ function modalAsignacionMasiva(){
   mh+='<span id="amCount" style="font-size:11px;color:#718096;margin-left:auto;white-space:nowrap">0 seleccionados</span>';
   mh+='</div>';
 
-  mh+='<div style="max-height:360px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px">';
+  mh+='<div style="max-height:340px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px">';
   mh+='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0;background:#f7fafc;z-index:1"><tr>';
-  mh+='<th style="width:34px;padding:6px"></th><th style="text-align:left;padding:6px">Trabajador</th><th style="text-align:left;padding:6px">Área</th><th style="width:90px;padding:6px">Horas</th><th style="width:110px;padding:6px">Tipo</th></tr></thead><tbody id="amTbody">';
+  mh+='<th style="width:34px;padding:6px"></th><th style="text-align:left;padding:6px">Trabajador</th><th style="text-align:left;padding:6px">Área</th></tr></thead><tbody id="amTbody">';
   for(var area in areas){
-    mh+='<tr class="am-area-hdr" data-area="'+area+'"><td colspan="5" style="background:#eff6ff;font-weight:700;color:#2b6cb0;padding:4px 10px;font-size:11px;letter-spacing:.4px">'+area+'</td></tr>';
+    mh+='<tr class="am-area-hdr" data-area="'+area+'"><td colspan="3" style="background:#eff6ff;font-weight:700;color:#2b6cb0;padding:4px 10px;font-size:11px;letter-spacing:.4px">'+area+'</td></tr>';
     areas[area].slice().sort(function(a,b){return a.nombre.localeCompare(b.nombre)}).forEach(function(t){
       var yaAsig=asg.some(function(a){return a.f===fechaSel&&a.w===t.codigo&&!a.na});
       mh+='<tr class="am-row" data-area="'+area+'" data-name="'+t.nombre.toLowerCase()+'">';
       mh+='<td style="text-align:center;padding:4px"><input type="checkbox" class="am-trb" value="'+t.codigo+'" onchange="amToggleRow(this)"></td>';
       mh+='<td style="padding:4px'+(yaAsig?';color:#276749;font-weight:600':'')+'">'+t.nombre+(yaAsig?' ✓':'')+'</td>';
       mh+='<td style="padding:4px;color:#718096;font-size:11px">'+area+'</td>';
-      mh+='<td style="padding:4px"><input type="number" class="am-h" min="0.5" max="24" step="0.5" disabled style="width:64px;padding:3px 5px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:12px"></td>';
-      mh+='<td style="padding:4px"><select class="am-row-tipo" disabled style="width:100%;padding:3px;border:1.5px solid #e2e8f0;border-radius:5px;font-size:12px"><option value="NORMAL">Normal</option><option value="EXTRAS">Extras</option></select></td>';
       mh+='</tr>';
     });
   }
@@ -4415,7 +4421,48 @@ function modalAsignacionMasiva(){
   mh+='<button class="btn btn-d" onclick="cerrarModal()">Cancelar</button>';
   mh+='</div></div></div>';
   document.getElementById('modalContainer').innerHTML=mh;
+  amRenderMix();
   amActualizarCount();
+}
+// Suma de horas del mix
+function amTotalMix(){var t=0;_amMix.forEach(function(it){t+=it.h||0;});return Math.round(t*100)/100;}
+// Renderiza la lista del mix + el total vs la jornada máxima del día
+function amRenderMix(){
+  var box=document.getElementById('amMixBox');if(!box)return;
+  var fEl=document.getElementById('amFecha');
+  var lim=amHorasDefecto(fEl?fEl.value:fechaSel);
+  if(!_amMix.length){box.innerHTML='<p style="font-size:12px;color:#a0aec0;padding:8px;text-align:center;border:1.5px dashed #e2e8f0;border-radius:8px">El mix está vacío. Agregá al menos una actividad arriba.</p>';return;}
+  var tot=amTotalMix();var excede=tot>lim;
+  var html='<table style="width:100%;border-collapse:collapse;font-size:12px">';
+  html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:5px 8px">Actividad</th><th style="text-align:left;padding:5px 8px">Módulos</th><th style="text-align:center;padding:5px 8px">Horas</th><th style="text-align:center;padding:5px 8px">Tipo</th><th style="width:30px"></th></tr></thead><tbody>';
+  _amMix.forEach(function(it,i){
+    html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:5px 8px;font-weight:600">'+it.sub+'</td><td style="padding:5px 8px;font-size:11px;color:#718096">'+(it.mods.join(', ')||'—')+'</td><td style="text-align:center;padding:5px 8px;font-weight:700">'+it.h+'h</td><td style="text-align:center;padding:5px 8px">'+(it.x?'<span style="color:#92400e;font-weight:600">Extra</span>':'Normal')+'</td><td style="text-align:center"><button class="btn btn-d btn-sm" style="font-size:10px;padding:1px 6px" onclick="amRemoveMix('+i+')">✕</button></td></tr>';
+  });
+  html+='</tbody></table>';
+  html+='<div style="margin-top:6px;padding:7px 10px;border-radius:6px;font-weight:700;font-size:13px;'+(excede?'background:#fff5f5;color:#c53030;border:1.5px solid #fc8181':'background:#f0fff4;color:#276749;border:1.5px solid #9ae6b4')+'">Total del mix: '+tot.toFixed(2)+'h / '+lim+'h '+(excede?'⚠️ excede la jornada (podés cargarlo igual)':'✓')+'</div>';
+  box.innerHTML=html;
+}
+function amRemoveMix(i){_amMix.splice(i,1);amRenderMix();}
+// Agrega la actividad configurada (selector + módulos + horas + tipo) al mix
+function amAddToMix(){
+  var actId=document.getElementById('amAct').value;
+  if(!actId){alert('Elegí una actividad para agregar.');return;}
+  var act=ACT.find(function(a){return a.id===actId});
+  var mods=[].slice.call(document.querySelectorAll('#amMods input:checked')).map(function(c){return c.value});
+  if(act&&act.usa_modulo&&mods.length===0){alert('Esta actividad requiere al menos un módulo.');return;}
+  var h=parseFloat(document.getElementById('amH').value)||0;
+  if(h<=0){alert('Las horas deben ser mayores a 0.');return;}
+  var x=document.getElementById('amTipo').value==='EXTRAS';
+  if(_amMix.some(function(it){return it.act===actId;})){alert('Esa actividad ya está en el mix.');return;}
+  _amMix.push({act:actId,sub:act?act.subcategoria:actId,uni:act?act.unidad:'',cat:act?act.categoria:'',mods:mods,h:h,x:x});
+  // Limpiar el selector para la siguiente
+  document.getElementById('amAct').value='';
+  document.getElementById('amMods').innerHTML='<p style="font-size:11px;color:#a0aec0">Selecciona una actividad para ver módulos</p>';
+  amRenderMix();
+  // Próximas horas por defecto = lo que resta para completar la jornada
+  var lim=amHorasDefecto(document.getElementById('amFecha').value);
+  var rest=Math.round((lim-amTotalMix())*100)/100;
+  document.getElementById('amH').value=rest>0?rest:'';
 }
 function amSelAll(){
   document.querySelectorAll('#amTbody tr.am-row').forEach(function(tr){
@@ -4429,15 +4476,7 @@ function amDeselAll(){
 }
 function amToggleRow(chk){
   var tr=chk.closest('tr');
-  var hInp=tr.querySelector('.am-h'),tInp=tr.querySelector('.am-row-tipo');
-  hInp.disabled=!chk.checked;tInp.disabled=!chk.checked;
-  if(chk.checked){
-    if(!hInp.value)hInp.value=document.getElementById('amH').value||8;
-    tInp.value=document.getElementById('amTipo').value||'NORMAL';
-    tr.style.background='#f0fff4';
-  }else{
-    tr.style.background='';
-  }
+  tr.style.background=chk.checked?'#f0fff4':'';
   amActualizarCount();
 }
 function amActualizarCount(){
@@ -4451,21 +4490,12 @@ function amHorasDefecto(f){
   var d=new Date(f+'T12:00:00');
   return d.getDay()===6?4:8; // 6 = sábado
 }
-// Al cambiar la fecha en el form, recalcula las horas por defecto y las aplica
-// a los trabajadores ya seleccionados.
+// Al cambiar la fecha: recalcula la jornada máxima y refresca el total del mix.
 function amSyncHorasDia(){
-  var fEl=document.getElementById('amFecha');var hEl=document.getElementById('amH');
-  if(fEl&&hEl)hEl.value=amHorasDefecto(fEl.value);
-  amAplicarDefaults();
-}
-function amAplicarDefaults(){
-  var h=document.getElementById('amH').value||8;
-  var tipo=document.getElementById('amTipo').value||'NORMAL';
-  document.querySelectorAll('.am-trb:checked').forEach(function(c){
-    var tr=c.closest('tr');
-    tr.querySelector('.am-h').value=h;
-    tr.querySelector('.am-row-tipo').value=tipo;
-  });
+  var fEl=document.getElementById('amFecha');
+  var lim=amHorasDefecto(fEl?fEl.value:fechaSel);
+  var lv=document.getElementById('amLimVal');if(lv)lv.textContent=lim+'h';
+  amRenderMix();
 }
 function amBuscarTrb(){
   var q=(document.getElementById('amBusqTrb').value||'').toLowerCase();
@@ -4516,34 +4546,56 @@ function amCambioAct(){
 }
 function doAsignacionMasiva(){
   var fecha=document.getElementById('amFecha').value;
-  var actId=document.getElementById('amAct').value;
-  var mods=[].slice.call(document.querySelectorAll('#amMods input:checked')).map(function(c){return c.value});
   if(!fecha){alert('Selecciona una fecha');return;}
-  if(!actId){alert('Selecciona una actividad');return;}
+  if(!_amMix.length){alert('Agregá al menos una actividad al mix.');return;}
   var filas=[].slice.call(document.querySelectorAll('#amTbody tr.am-row')).filter(function(tr){return tr.querySelector('.am-trb').checked;});
-  if(!filas.length){alert('Selecciona al menos un trabajador');return;}
-  var act=ACT.find(function(a){return a.id===actId});
-  var nuevos=0,actualizados=0;
+  if(!filas.length){alert('Selecciona al menos un trabajador.');return;}
+  var lim=amHorasDefecto(fecha);
+  var afectados=[],nuevas=0,dup=0;
   filas.forEach(function(tr){
     var cod=tr.querySelector('.am-trb').value;
-    var h=parseFloat(tr.querySelector('.am-h').value)||8;
-    var esExtra=tr.querySelector('.am-row-tipo').value==='EXTRAS';
     var trb=TRB.find(function(t){return t.codigo===cod});if(!trb)return;
-    var existing=asg.find(function(a){return a.f===fecha&&a.w===cod&&a.act===actId&&!a.na});
-    if(existing){
-      existing.h=h;existing.x=esExtra;existing.mods=mods;actualizados++;
-    }else{
-      _pushAsg({f:fecha,w:cod,n:trb.nombre,ar:trb.area,act:actId,
-        uni:act?act.unidad:'',cat:act?act.categoria:'',sub:act?act.subcategoria:'',
-        h:h,x:esExtra,mods:mods,na:false});
-      nuevos++;
-    }
+    _amMix.forEach(function(it){
+      // No duplicar la misma persona+actividad+día
+      if(asg.some(function(a){return a.f===fecha&&a.w===cod&&a.act===it.act&&!a.na;})){dup++;return;}
+      _pushAsg({f:fecha,w:cod,n:trb.nombre,ar:trb.area,act:it.act,uni:it.uni,cat:it.cat,sub:it.sub,h:it.h,x:it.x,mods:(it.mods||[]).slice(),na:false});
+      nuevas++;
+    });
+    // Total del día para este trabajador (todas sus actividades del día, no inasistencias)
+    var totDia=0;asg.forEach(function(a){if(a.f===fecha&&a.w===cod&&!a.na)totDia+=a.h||0;});
+    afectados.push({cod:cod,nombre:trb.nombre,area:trb.area,total:Math.round(totDia*100)/100});
   });
-  guardarLS();cerrarModal();
+  guardarLS();
   if(fecha===fechaSel)renderT1();
-  var msg='✅ '+nuevos+' asignados'+(actualizados?' · '+actualizados+' actualizados':'');
-  msg+=' — "'+( act?act.subcategoria:actId)+'"';
-  toast(msg,'info',4000);
+  amResultados(afectados,fecha,lim,nuevas,dup);
+}
+// Pantalla de resultados: lista a los afectados y RESALTA en rojo a quienes
+// superan la jornada del día (al aprobar habrá que filtrarlos / revisar extras).
+function amResultados(afectados,fecha,lim,nuevas,dup){
+  var exced=afectados.filter(function(p){return p.total>lim;});
+  afectados.sort(function(a,b){return b.total-a.total;}); // los de más horas arriba
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:580px;width:96%;max-height:90vh;overflow:auto">';
+  mh+='<h2>✅ Asignaciones creadas</h2>';
+  mh+='<p style="font-size:12px;color:#4a5568;margin:4px 0 10px"><b>'+nuevas+'</b> asignación(es) creadas para <b>'+afectados.length+'</b> persona(s) el '+fecha+'.'+(dup?' <span style="color:#92400e">'+dup+' ya existían y se omitieron.</span>':'')+'</p>';
+  if(exced.length){
+    mh+='<div style="background:#fff5f5;border:2px solid #fc8181;border-radius:8px;padding:10px;margin-bottom:10px">';
+    mh+='<b style="color:#c53030;font-size:13px">⚠️ '+exced.length+' persona(s) superan la jornada de '+lim+'h</b>';
+    mh+='<p style="font-size:11px;color:#9b2c2c;margin:4px 0 0">Revisá estos casos al aprobar — el excedente se tratará como horas extra.</p></div>';
+  }
+  mh+='<div style="max-height:420px;overflow-y:auto;border:1.5px solid #e2e8f0;border-radius:8px"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0"><tr style="background:#f7fafc"><th style="text-align:left;padding:6px 8px">Trabajador</th><th style="text-align:left;padding:6px 8px">Área</th><th style="text-align:center;padding:6px 8px">Total del día</th></tr></thead><tbody>';
+  afectados.forEach(function(p){
+    var over=p.total>lim;
+    mh+='<tr style="border-bottom:1px solid #f0f4f8;'+(over?'background:#fff5f5':'')+'">';
+    mh+='<td style="padding:6px 8px;font-weight:'+(over?'700':'600')+';color:'+(over?'#c53030':'#2d3748')+'">'+(over?'⚠️ ':'')+p.nombre+'</td>';
+    mh+='<td style="padding:6px 8px;font-size:11px;color:#718096">'+p.area+'</td>';
+    mh+='<td style="text-align:center;padding:6px 8px;font-weight:700;color:'+(over?'#c53030':'#276749')+'">'+p.total.toFixed(1)+'h'+(over?' / '+lim:'')+'</td>';
+    mh+='</tr>';
+  });
+  mh+='</tbody></table></div>';
+  mh+='<div style="margin-top:12px"><button class="btn btn-s" onclick="cerrarModal()">Cerrar</button></div>';
+  mh+='</div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+  toast('✅ '+nuevas+' asignaciones'+(exced.length?' · ⚠️ '+exced.length+' exceden jornada':''),(exced.length?'warn':'info'),5000);
 }
 // === INASISTENCIAS (GESTION) ===
 function renderGIna(){
