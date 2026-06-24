@@ -420,7 +420,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.6 · 2026-06-17';
+var APP_VERSION='v6.7 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -4365,6 +4365,15 @@ function modalAsignacionMasiva(){
   // Selector para agregar una actividad al mix
   mh+='<div style="border:1.5px dashed #93c5fd;border-radius:8px;padding:10px;background:#fff">';
   mh+='<label style="font-size:12px;font-weight:700;color:#2b6cb0;display:block;margin-bottom:4px">➕ Agregar actividad al mix</label>';
+  // Filtros en cascada: Unidad → Categoría → Subcategoría
+  var _unisAct=[];ACT.filter(function(a){return a.activo;}).forEach(function(a){if(a.unidad&&_unisAct.indexOf(a.unidad)<0)_unisAct.push(a.unidad);});_unisAct.sort();
+  mh+='<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:4px">';
+  mh+='<select id="amFltUni" onchange="amFltCambioUni()" style="flex:1;min-width:130px;font-size:11px;padding:5px 6px;border:1.5px solid #e2e8f0;border-radius:6px;color:#4a5568"><option value="">🏢 Todas las unidades</option>';
+  _unisAct.forEach(function(u){mh+='<option value="'+u+'">'+u+'</option>';});
+  mh+='</select>';
+  mh+='<select id="amFltCat" onchange="amFltCambioCat()" style="flex:1;min-width:150px;font-size:11px;padding:5px 6px;border:1.5px solid #e2e8f0;border-radius:6px;color:#4a5568"><option value="">📂 Todas las categorías</option></select>';
+  mh+='<select id="amFltSub" onchange="amBuscarAct()" style="flex:1;min-width:150px;font-size:11px;padding:5px 6px;border:1.5px solid #e2e8f0;border-radius:6px;color:#4a5568"><option value="">🏷️ Todas las subcategorías</option></select>';
+  mh+='</div>';
   mh+='<input type="text" id="amBusqAct" placeholder="🔍 Buscar actividad por nombre, código, categoría o unidad..." oninput="amBuscarAct()" style="margin-bottom:4px">';
   mh+='<select id="amAct" onchange="amCambioAct()" size="10" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
   mh+='<option value="">-- Selecciona actividad --</option>';
@@ -4423,6 +4432,31 @@ function modalAsignacionMasiva(){
   document.getElementById('modalContainer').innerHTML=mh;
   amRenderMix();
   amActualizarCount();
+  amFltCambioUni(); // pobla categorías y subcategorías en cascada
+}
+// Filtros en cascada del selector de actividades
+function _amDistinctAct(field,filtro){
+  var seen={},out=[];
+  ACT.filter(function(a){return a.activo;}).forEach(function(a){
+    if(filtro&&!filtro(a))return;
+    var v=a[field];if(v&&!seen[v]){seen[v]=1;out.push(v);}
+  });
+  return out.sort();
+}
+function amFltCambioUni(){
+  var uni=(document.getElementById('amFltUni')||{}).value||'';
+  var selC=document.getElementById('amFltCat');if(!selC)return;
+  selC.innerHTML='<option value="">📂 Todas las categorías</option>';
+  _amDistinctAct('categoria',function(a){return !uni||a.unidad===uni;}).forEach(function(c){selC.innerHTML+='<option value="'+c+'">'+c+'</option>';});
+  amFltCambioCat();
+}
+function amFltCambioCat(){
+  var uni=(document.getElementById('amFltUni')||{}).value||'';
+  var cat=(document.getElementById('amFltCat')||{}).value||'';
+  var selS=document.getElementById('amFltSub');if(!selS)return;
+  selS.innerHTML='<option value="">🏷️ Todas las subcategorías</option>';
+  _amDistinctAct('subcategoria',function(a){return (!uni||a.unidad===uni)&&(!cat||a.categoria===cat);}).forEach(function(s){selS.innerHTML+='<option value="'+s+'">'+s+'</option>';});
+  amBuscarAct();
 }
 // Suma de horas del mix
 function amTotalMix(){var t=0;_amMix.forEach(function(it){t+=it.h||0;});return Math.round(t*100)/100;}
@@ -4515,14 +4549,22 @@ function amBuscarAct(){
   var q=(document.getElementById('amBusqAct').value||'').toLowerCase();
   var sel=document.getElementById('amAct');
   var prev=sel.value;
+  var fUni=(document.getElementById('amFltUni')||{}).value||'';
+  var fCat=(document.getElementById('amFltCat')||{}).value||'';
+  var fSub=(document.getElementById('amFltSub')||{}).value||'';
   sel.innerHTML='<option value="">-- Selecciona actividad --</option>';
-  var lastUni='';
+  var lastUni='',n=0;
   ACT.filter(function(a){return a.activo}).forEach(function(a){
+    if(fUni&&a.unidad!==fUni)return;
+    if(fCat&&a.categoria!==fCat)return;
+    if(fSub&&a.subcategoria!==fSub)return;
     var match=!q||(a.subcategoria&&a.subcategoria.toLowerCase().indexOf(q)>=0)||(a.categoria&&a.categoria.toLowerCase().indexOf(q)>=0)||(a.unidad&&a.unidad.toLowerCase().indexOf(q)>=0)||(a.codigo&&a.codigo.toLowerCase().indexOf(q)>=0);
     if(!match)return;
     if(a.unidad!==lastUni){sel.innerHTML+='<optgroup label="'+a.unidad+'">';lastUni=a.unidad;}
     sel.innerHTML+='<option value="'+a.id+'"'+(a.id==prev?' selected':'')+'>'+(a.codigo?'['+a.codigo+'] ':'')+a.subcategoria+'</option>';
+    n++;
   });
+  if(n===0)sel.innerHTML+='<option value="" disabled>(sin actividades con estos filtros)</option>';
 }
 function amSelAllMods(){
   var cbs=document.querySelectorAll('#amMods input[type=checkbox]');
