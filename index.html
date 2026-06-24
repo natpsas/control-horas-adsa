@@ -420,7 +420,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.7 · 2026-06-17';
+var APP_VERSION='v6.9 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1149,7 +1149,7 @@ function asgToSPCols(a){
   };
 }
 function spColsToAsg(it){
-  return {
+  var a={
     _key:it.Title,_spId:it.Id,
     f:it.Fecha||'',w:it.Codigo||'',
     act:it.ActividadId||'',uni:it.Unidad||'',
@@ -1159,6 +1159,10 @@ function spColsToAsg(it){
     na:!!it.EsNA,mt:it.Motivo||'',
     estado:it.Estado||'BORRADOR',creadoPor:it.CreadoPor||''
   };
+  // Marca el hash de lo que llegó de SP: así NO se cuenta como "sin subir"
+  // ni se re-sube en cada ciclo (evita el bucle de re-escritura).
+  a._hash=_asgHash(a);
+  return a;
 }
 async function _spAsgListOK(){
   if(_SP_ASG_LIST_VERIFIED!==null)return _SP_ASG_LIST_VERIFIED;
@@ -1618,8 +1622,18 @@ async function spGuardar(){
       if(_normArr(asgMerged)!==_normArr(spAsg)){await spEscribirItem('asg',asgMerged);}
       spBackupDiarioAsg(asgMerged).catch(function(){});
     }
-    // reg — ya no se escribe al blob; ControlHoras_Registros es la fuente de verdad.
-    // Los registros se sincronizan fila-por-fila vía spEscribirReg() al consolidar/aprobar.
+    // reg — ControlHoras_Registros es la fuente de verdad. Se escriben al consolidar/aprobar,
+    // pero acá reintentamos los que quedaron SIN _spId (subida previa fallida) para que
+    // no queden "sin subir" para siempre. En lotes de 5 para no saturar.
+    var toWriteReg=reg.filter(function(r){return r.id&&!r._spId;});
+    if(toWriteReg.length){
+      for(var iR=0;iR<toWriteReg.length;iR+=5){
+        await Promise.all(toWriteReg.slice(iR,iR+5).map(function(r){
+          return spEscribirReg(r).catch(function(e){console.warn('spGuardar reg fila:',e.message);});
+        }));
+      }
+      guardarLS(); // persiste _spId actualizados
+    }
     // hue — merge completo: SP base + todas las fechas locales (no solo fechaSel)
     var itHue=await spLeerItem('hue');
     var spHue=(itHue&&itHue.Valor)?JSON.parse(itHue.Valor):{};
@@ -3340,28 +3354,38 @@ function renderT4(){
     html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-weight:600">'+ar+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px">'+b.hN.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+b.hE.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+(b.hN+b.hE).toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px;color:#276749">'+b.ap+'</td><td style="text-align:center;padding:6px 8px;color:#92400e">'+b.pend+'</td></tr>';
   });
   html+='</tbody></table></div>';
-  // --- Tabla por Actividad (agrupada por Unidad de negocio) ---
+  // --- Tabla por Actividad (jerarquía Unidad → Categoría → Subcategoría) ---
   var byAct={};
   base.forEach(function(r){
     var key=(r.uni||'')+'||'+(r.cat||'')+'||'+(r.sub||'');
-    if(!byAct[key])byAct[key]={uni:r.uni||'(Sin unidad)',cat:r.cat||'',sub:r.sub||'',wrks:{},h:0,rend:0,rendN:0,ind:r.ind||''};
+    if(!byAct[key])byAct[key]={uni:r.uni||'(Sin unidad)',cat:r.cat||'(Sin categoría)',sub:r.sub||'(Sin subcategoría)',wrks:{},h:0,rend:0,rendN:0,ind:r.ind||''};
     var b=byAct[key];b.wrks[r.w]=1;b.h+=r.hr;
     if(r.rend){b.rend+=r.rend;b.rendN++;}
   });
-  // Agrupar actividades por unidad de negocio
-  var actsPorUni={};
-  Object.keys(byAct).forEach(function(k){var b=byAct[k];if(!actsPorUni[b.uni])actsPorUni[b.uni]=[];actsPorUni[b.uni].push(b);});
-  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Por Actividad <span style="font-weight:400;color:#a0aec0;font-size:11px">(por unidad de negocio)</span></h3>';
+  // Árbol: unidad → categoría → [actividades], con subtotales por nivel
+  var arbol={};
+  Object.keys(byAct).forEach(function(k){
+    var b=byAct[k];
+    if(!arbol[b.uni])arbol[b.uni]={h:0,wrks:{},cats:{}};
+    var U=arbol[b.uni];U.h+=b.h;Object.keys(b.wrks).forEach(function(w){U.wrks[w]=1;});
+    if(!U.cats[b.cat])U.cats[b.cat]={h:0,wrks:{},acts:[]};
+    var C=U.cats[b.cat];C.h+=b.h;Object.keys(b.wrks).forEach(function(w){C.wrks[w]=1;});
+    C.acts.push(b);
+  });
+  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin-bottom:6px">Por Actividad <span style="font-weight:400;color:#a0aec0;font-size:11px">(unidad → categoría → subcategoría)</span></h3>';
   html+='<div style="overflow-x:auto;margin-bottom:16px"><table style="width:100%;border-collapse:collapse;font-size:12px">';
-  html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Categoría</th><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Actividad</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trab.</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Rendim. total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Prom/trab</th></tr></thead><tbody>';
-  Object.keys(actsPorUni).sort().forEach(function(uni){
-    var lista=actsPorUni[uni];
-    var uniH=0,uniWrks={};lista.forEach(function(b){uniH+=b.h;Object.keys(b.wrks).forEach(function(w){uniWrks[w]=1;});});
-    html+='<tr><td colspan="6" style="background:#eef2ff;color:#3730a3;font-weight:700;padding:5px 8px;letter-spacing:.3px">🏢 '+uni+' <span style="font-weight:400;color:#6366f1">— '+uniH.toFixed(1)+'h · '+Object.keys(uniWrks).length+' trab.</span></td></tr>';
-    lista.sort(function(a,b){return (a.cat+a.sub).localeCompare(b.cat+b.sub);}).forEach(function(b){
-      var promH=b.h/Object.keys(b.wrks).length;
-      var rendStr=b.rendN>0?b.rend+' '+indLabel(b.ind):'-';
-      html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-size:11px;color:#718096">'+b.cat+'</td><td style="padding:6px 8px;font-weight:600">'+b.sub+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+b.h.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+rendStr+'</td><td style="text-align:center;padding:6px 8px">'+promH.toFixed(1)+'h</td></tr>';
+  html+='<thead><tr style="background:#f7fafc"><th style="text-align:left;padding:7px 8px;border-bottom:2px solid #e2e8f0">Actividad</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Trab.</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">H.Total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Rendim. total</th><th style="text-align:center;padding:7px 8px;border-bottom:2px solid #e2e8f0">Prom/trab</th></tr></thead><tbody>';
+  Object.keys(arbol).sort().forEach(function(uni){
+    var U=arbol[uni];
+    html+='<tr><td colspan="5" style="background:#eef2ff;color:#3730a3;font-weight:700;padding:6px 8px;letter-spacing:.3px">🏢 '+uni+' <span style="font-weight:400;color:#6366f1">— '+U.h.toFixed(1)+'h · '+Object.keys(U.wrks).length+' trab.</span></td></tr>';
+    Object.keys(U.cats).sort().forEach(function(cat){
+      var C=U.cats[cat];
+      html+='<tr><td colspan="5" style="background:#f5f3ff;color:#6b21a8;font-weight:600;padding:5px 8px 5px 22px;font-size:11px">📂 '+cat+' <span style="font-weight:400;color:#9333ea">— '+C.h.toFixed(1)+'h · '+Object.keys(C.wrks).length+' trab.</span></td></tr>';
+      C.acts.sort(function(a,b){return a.sub.localeCompare(b.sub);}).forEach(function(b){
+        var promH=b.h/Object.keys(b.wrks).length;
+        var rendStr=b.rendN>0?b.rend+' '+indLabel(b.ind):'-';
+        html+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px 6px 36px;font-weight:600">🏷️ '+b.sub+'</td><td style="text-align:center;padding:6px 8px">'+Object.keys(b.wrks).length+'</td><td style="text-align:center;padding:6px 8px;font-weight:700">'+b.h.toFixed(1)+'h</td><td style="text-align:center;padding:6px 8px">'+rendStr+'</td><td style="text-align:center;padding:6px 8px">'+promH.toFixed(1)+'h</td></tr>';
+      });
     });
   });
   html+='</tbody></table></div>';
