@@ -420,7 +420,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.9 · 2026-06-17';
+var APP_VERSION='v6.11 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1691,7 +1691,7 @@ function modalConexionPA(){
   var estado=SP_READY?
     '<div class="alert al-i" style="font-size:11px">✅ <b>Conectado con Microsoft 365</b> (Azure AD / MSAL)</div>':
     '<div class="alert al-w" style="font-size:11px">⚠️ No autenticado. Haz clic en "Iniciar sesión" para conectar.</div>';
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:480px">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:480px">';
   mh+='<h2>☁️ Conexión SharePoint</h2>'+estado;
   mh+='<p style="font-size:12px;color:#4a5568;margin:10px 0">La app usa tu cuenta de Microsoft 365 para sincronizar datos directamente con SharePoint. No se requiere configuración adicional.</p>';
   if(!SP_READY)mh+='<button class="btn btn-s" onclick="cerrarModal();spLoginYConectar()">🔑 Iniciar sesión con Microsoft 365</button>';
@@ -2165,7 +2165,7 @@ function renderT1(){
 function addAct(cod){
   guardarModsEnMem();guardarModsConsol();
   var trab=TRB.find(function(t){return t.codigo===cod});
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()">';
   mh+='<div class="modal" style="max-width:480px">';
   mh+='<div style="margin-bottom:14px"><div style="font-size:16px;font-weight:700;color:#1a202c">+ Actividad</div>';
   mh+='<div style="font-size:12px;color:#718096;margin-top:2px">'+(trab?trab.nombre:'')+'</div></div>';
@@ -2627,7 +2627,7 @@ function procesarImportConsolidado(rows){
     alert(msg);return;
   }
   // Preview modal
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:820px;width:98%">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:820px;width:98%">';
   mh+='<h2>📥 Importar Consolidado — Preview</h2>';
   if(errores.length)mh+='<div class="alert al-w" style="font-size:11px;margin-bottom:8px"><b>⚠ '+errores.length+' filas omitidas:</b><br>'+errores.slice(0,5).join('<br>')+(errores.length>5?'<br>...y '+(errores.length-5)+' más':'')+'</div>';
   mh+='<p style="font-size:12px;color:#4a5568;margin-bottom:8px"><b>'+nuevos.length+'</b> registros. Los PENDIENTES quedan para aprobar en Tab 3.</p>';
@@ -3168,7 +3168,7 @@ function procesarImportReg(rows){
     if(errores.length)msg+='\n\nErrores:\n'+errores.slice(0,10).join('\n');
     alert(msg);return;
   }
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:780px;width:97%">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:780px;width:97%">';
   mh+='<h2>📥 Importar registros — Preview</h2>';
   if(errores.length)mh+='<div class="alert al-w" style="font-size:11px;margin-bottom:10px"><b>⚠ '+errores.length+' filas con error (se omiten):</b><br>'+errores.slice(0,5).join('<br>')+(errores.length>5?'<br>...y '+(errores.length-5)+' más':'')+'</div>';
   mh+='<p style="font-size:12px;color:#4a5568;margin-bottom:10px"><b>'+nuevos.length+'</b> registros listos para importar con estado <b>PENDIENTE</b>. Quedarán disponibles para aprobar en Tab 3.</p>';
@@ -3783,7 +3783,7 @@ function procesarImpInteligente(tipo,txt){
 
 // === GESTION DE CARGOS COMPLETA ===
 function modalNuevoCargo(){if(!soloAdmin())return;
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Nuevo Cargo</h2>';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Nuevo Cargo</h2>';
   mh+='<div class="fg"><label>ID (ej: SUP_NUEVO)</label><input id="ncId"></div>';
   mh+='<div class="fg"><label>Nombre</label><input id="ncNombre"></div>';
   mh+='<div class="fg"><label>Personas (c\u00f3digos sep. por coma)</label><input id="ncPersonas" placeholder="E000010, E000012"></div>';
@@ -4001,7 +4001,7 @@ function delUsr(u){if(!soloAdmin())return;if(confirm('Eliminar?')){usr=usr.filte
 // MODALES
 function modalConfigBase(cod){if(!soloAdmin())return;
   var t=TRB.find(function(x){return x.codigo===cod});if(!t)return;
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Config. Base: '+t.nombre+'</h2>';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Config. Base: '+t.nombre+'</h2>';
   mh+='<input type="hidden" id="mcbCod" value="'+cod+'">';
   mh+='<p style="font-size:12px;color:#718096;margin-bottom:10px">Configura la actividad que se pre-carga al usar "Cargar plantilla".</p>';
   // Actividad
@@ -4055,7 +4055,7 @@ function doSaveConfigBase(){
   if(SP_READY&&t)spGuardarTrabajador(t).catch(function(e){toast('⚠️ Error SP TRB: '+e.message,'warn');});
 }
 function modalTrb(cod){if(!soloAdmin())return;var isNew=!cod;var t=isNew?{codigo:'',nombre:'',area:'',supervisor:''}:TRB.find(function(x){return x.codigo===cod});if(!isNew&&!t)return;
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>'+(isNew?'Agregar':'Editar')+' Trabajador</h2><input type="hidden" id="mTMode" value="'+(isNew?'new':cod)+'">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>'+(isNew?'Agregar':'Editar')+' Trabajador</h2><input type="hidden" id="mTMode" value="'+(isNew?'new':cod)+'">';
   mh+='<div class="fg"><label>C\u00f3digo</label><input id="mTC" value="'+(t.codigo||'')+'" '+(isNew?'':'readonly')+'></div>';
   mh+='<div class="fg"><label>Nombre</label><input id="mTN" value="'+(t.nombre||'')+'"></div>';
   mh+='<div class="fg"><label>\u00c1rea</label><input id="mTA" value="'+(t.area||'')+'"></div>';
@@ -4065,7 +4065,7 @@ function modalTrb(cod){if(!soloAdmin())return;var isNew=!cod;var t=isNew?{codigo
 function doSaveTrb(){var mode=document.getElementById('mTMode').value;var c=document.getElementById('mTC').value.trim(),n=document.getElementById('mTN').value.trim(),a=document.getElementById('mTA').value.trim(),s=document.getElementById('mTS').value.trim();
   if(!c||!n){alert('Código y nombre requeridos');return} var tObj; if(mode==='new'){if(TRB.find(function(x){return x.codigo===c})){alert('Ya existe');return}tObj={codigo:c,nombre:n,area:a,supervisor:s,actividad_base:'',activo:true};TRB.push(tObj);}else{tObj=TRB.find(function(x){return x.codigo===mode});if(tObj){tObj.nombre=n;tObj.area=a;tObj.supervisor=s;}} guardarLS();cerrarModal();renderGTrb();toast('✅ Trabajador guardado'); if(SP_READY&&tObj)spGuardarTrabajador(tObj).catch(function(e){toast('⚠️ Error SP TRB: '+e.message,'warn');});}
 function modalMod(id){if(!soloAdmin())return;var isNew=!id;var m=isNew?{id:'',nombre:'',unidad:''}:MOD.find(function(x){return x.id===id});if(!isNew&&!m)return;
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>'+(isNew?'Agregar':'Editar')+' M\u00f3dulo</h2><input type="hidden" id="mMMode" value="'+(isNew?'new':id)+'">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>'+(isNew?'Agregar':'Editar')+' M\u00f3dulo</h2><input type="hidden" id="mMMode" value="'+(isNew?'new':id)+'">';
   mh+='<div class="fg"><label>ID</label><input id="mMI" value="'+(m.id||'')+'" '+(isNew?'':'readonly')+'></div>';
   mh+='<div class="fg"><label>Nombre</label><input id="mMN" value="'+(m.nombre||'')+'"></div>';
   mh+='<div class="fg"><label>Unidad</label><select id="mMU">';UNI.forEach(function(u){mh+='<option value="'+u.id+'" '+(m.unidad===u.id?'selected':'')+'>'+u.id+'</option>'});
@@ -4077,7 +4077,7 @@ function modalMod(id){if(!soloAdmin())return;var isNew=!id;var m=isNew?{id:'',no
 function doSaveMod(){var mode=document.getElementById('mMMode').value;var mi=document.getElementById('mMI').value.trim(),mn=document.getElementById('mMN').value.trim(),mu=document.getElementById('mMU').value;
   var inc=document.getElementById('mMInc')?document.getElementById('mMInc').checked:true;
   if(!mi||!mn){alert('ID y nombre requeridos');return}if(mode==='new'){if(MOD.find(function(x){return x.id===mi})){alert('Ya existe');return}MOD.push({id:mi,nombre:mn,unidad:mu,activo:true,incluir_en_todos:inc})}else{var m=MOD.find(function(x){return x.id===mode});if(m){m.nombre=mn;m.unidad=mu;m.incluir_en_todos=inc;}}guardarLS();cerrarModal();renderGMod();toast('✅ Módulo guardado')}
-function modalAct(){if(!soloAdmin())return;var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Agregar Actividad</h2>';
+function modalAct(){if(!soloAdmin())return;var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Agregar Actividad</h2>';
   mh+='<div class="fg"><label>Unidad</label><select id="mAU">';UNI.forEach(function(u){mh+='<option value="'+u.id+'">'+u.id+'</option>'});
   mh+='</select></div><div class="fg"><label>Categor\u00eda</label><input id="mAC"></div><div class="fg"><label>SubCategor\u00eda</label><input id="mAS"></div>';
   mh+='<div class="fg"><label>Indicador</label><input id="mAI"></div><div class="fg"><label>Desc. Rendimiento</label><input id="mAD"></div>';
@@ -4102,7 +4102,7 @@ function setActCodigo(id,val){
 function modalEditAct(id){
   if(!soloAdmin())return;
   var a=ACT.find(function(x){return x.id===id});if(!a)return;
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Editar Actividad #'+_esc(a.id)+'</h2>';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Editar Actividad #'+_esc(a.id)+'</h2>';
   mh+='<input type="hidden" id="eAId" value="'+_esc(a.id)+'">';
   mh+='<div class="fg"><label>Unidad</label><select id="eAU">';
   UNI.forEach(function(u){mh+='<option value="'+_esc(u.id)+'"'+(a.unidad===u.id?' selected':'')+'>'+_esc(u.id)+'</option>'});
@@ -4145,7 +4145,7 @@ function doEditAct(){
 function modalRenombrarCat(){
   if(!soloAdmin())return;
   var cats=[];ACT.forEach(function(a){if(cats.indexOf(a.categoria)<0)cats.push(a.categoria)});cats.sort();
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>✏️ Renombrar Categoría</h2>';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>✏️ Renombrar Categoría</h2>';
   mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">Cambia el nombre de una categoría en <b>todas</b> sus actividades a la vez.</p>';
   mh+='<div class="fg"><label>Categoría actual</label><select id="rCatOld" onchange="rCatPreview()"><option value="">-- Selecciona --</option>';
   cats.forEach(function(c){mh+='<option value="'+_esc(c)+'">'+_esc(c)+'</option>'});
@@ -4180,7 +4180,7 @@ function doRenombrarCat(){
     })(0);
   }
 }
-function modalUsr(){if(!soloAdmin())return;var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Agregar Usuario</h2>';
+function modalUsr(){if(!soloAdmin())return;var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Agregar Usuario</h2>';
   mh+='<div class="fg"><label>Usuario</label><input id="mUU"></div><div class="fg"><label>Clave</label><input type="password" id="mUP"></div>';
   mh+='<div class="fg"><label>Rol</label><select id="mUR"><option>admin</option><option>operador</option><option>supervisor</option><option>operario</option></select></div>';
   mh+='<div class="fg"><label>C\u00f3digo trabajador (para supervisores)</label><select id="mUCod"><option value="">Ninguno</option>';
@@ -4190,7 +4190,7 @@ function modalUsr(){if(!soloAdmin())return;var mh='<div class="modal-bg" onclick
 function doSaveUsr(){var u=document.getElementById('mUU').value.trim(),p=document.getElementById('mUP').value,r=document.getElementById('mUR').value,cod=document.getElementById('mUCod').value;
   if(!u){alert('Usuario requerido');return}if(p.length<4){alert('Clave min 4');return}usr.push({usr:u,clave:p,rol:r,codigo:cod});guardarLS();cerrarModal();renderGUsr();toast('✅ Usuario creado')}
 function modalCargo(id){if(!soloAdmin())return;var c=CARGOS.find(function(x){return x.id===id});if(!c)return;
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>Editar Cargo: '+c.nombre+'</h2>';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Editar Cargo: '+c.nombre+'</h2>';
   mh+='<div class="fg"><label>Nombre</label><input id="mCN" value="'+c.nombre+'"></div>';
   mh+='<div class="fg"><label>Personas asignadas (c\u00f3digos separados por coma)</label><input id="mCP" value="'+c.personas.join(', ')+'"></div>';
   mh+='<p style="font-size:11px;color:#718096;margin-top:6px">Actividades asignadas: '+ACT.filter(function(a){return a.aprobador===c.id}).length+'</p>';
@@ -4327,7 +4327,7 @@ function procesarImportAsg(rows){
     alert(msg);return;
   }
   // Preview modal
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:760px;width:97%">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:760px;width:97%">';
   mh+='<h2>📥 Importar Asignaciones — Preview</h2>';
   if(errores.length)mh+='<div class="alert al-w" style="font-size:11px;margin-bottom:8px"><b>⚠ '+errores.length+' filas omitidas:</b><br>'+errores.slice(0,5).join('<br>')+(errores.length>5?'<br>...y '+(errores.length-5)+' más':'')+'</div>';
   mh+='<p style="font-size:12px;color:#4a5568;margin-bottom:8px"><b>'+nuevas.length+'</b> asignaciones listas. Se agregarán a Tab 1 como asignaciones pendientes de consolidar.</p>';
@@ -4376,7 +4376,7 @@ function modalAsignacionMasiva(){
     areas[t.area].push(t);
   });
   var lim=amHorasDefecto(fechaSel);
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:1180px;width:98%;max-height:96vh;overflow:auto">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:1180px;width:98%;max-height:96vh;overflow:auto">';
   mh+='<h2>👥 Asignación Masiva — Mix de actividades</h2>';
   mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">1️⃣ Armá el <b>mix</b>: agregá actividades con sus módulos y horas &nbsp;→&nbsp; 2️⃣ Elegí las personas. Cada persona recibe <b>todas</b> las actividades del mix.</p>';
 
@@ -4604,9 +4604,10 @@ function amCambioAct(){
   if(!act.usa_modulo){mbox.innerHTML='<p style="font-size:11px;color:#718096">Esta actividad no usa módulos</p>';return;}
   var mods=MOD.filter(function(m){return m.activo&&m.unidad===act.unidad});
   if(!mods.length){mbox.innerHTML='<p style="font-size:11px;color:#a0aec0">Sin módulos para esta unidad</p>';return;}
+  var autoSel=mods.length===1; // si hay un solo módulo, queda marcado por defecto
   var html='';
   mods.forEach(function(m){
-    html+='<div class="cbi"><input type="checkbox" value="'+m.id+'"><label>'+m.nombre+'</label></div>';
+    html+='<div class="cbi"><input type="checkbox" value="'+m.id+'"'+(autoSel?' checked':'')+'><label>'+m.nombre+'</label></div>';
   });
   mbox.innerHTML=html;
 }
@@ -4640,7 +4641,7 @@ function doAsignacionMasiva(){
 function amResultados(afectados,fecha,lim,nuevas,dup){
   var exced=afectados.filter(function(p){return p.total>lim;});
   afectados.sort(function(a,b){return b.total-a.total;}); // los de más horas arriba
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:580px;width:96%;max-height:90vh;overflow:auto">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:580px;width:96%;max-height:90vh;overflow:auto">';
   mh+='<h2>✅ Asignaciones creadas</h2>';
   mh+='<p style="font-size:12px;color:#4a5568;margin:4px 0 10px"><b>'+nuevas+'</b> asignación(es) creadas para <b>'+afectados.length+'</b> persona(s) el '+fecha+'.'+(dup?' <span style="color:#92400e">'+dup+' ya existían y se omitieron.</span>':'')+'</p>';
   if(exced.length){
@@ -4727,7 +4728,7 @@ function modalEditIna(f,w){
   var a=asg.find(function(x){return x.f===f&&x.w===w&&x.na});
   if(!a)return;
   var trb=TRB.find(function(t){return t.codigo===w});
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal"><h2>✏️ Editar Inasistencia</h2>';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>✏️ Editar Inasistencia</h2>';
   mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px"><b>'+(trb?trb.nombre:w)+'</b> — '+f+'</p>';
   mh+='<div class="fg"><label>Motivo</label><select id="eInaMot" style="font-size:12px"><option value="">Sin motivo</option>';
   MOTIVOS_NA.forEach(function(m){mh+='<option value="'+m[0]+'"'+(a.mt===m[0]?' selected':'')+'>'+m[1]+'</option>';});
@@ -4882,7 +4883,7 @@ async function modalRecuperarAsg(){
     var backups=await spListarBackupsAsg();
     var todas=versiones.concat(backups);
     if(!todas.length){
-      document.getElementById('modalContainer').innerHTML='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:560px;width:96%">'+
+      document.getElementById('modalContainer').innerHTML='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:560px;width:96%">'+
         '<h2>🕘 Recuperar Asignaciones</h2><p style="font-size:13px;color:#718096">No se encontraron versiones anteriores ni copias de seguridad con datos para "asg". '+
         'Si el historial de versiones de la lista <b>'+SP_LIST+'</b> está deshabilitado y aún no se ha generado ninguna copia diaria, no es posible recuperar por esta vía.</p>'+
         '<div style="display:flex;gap:6px;margin-top:14px"><button class="btn btn-d" onclick="cerrarModal()">Cerrar</button></div></div></div>';
@@ -4894,7 +4895,7 @@ async function modalRecuperarAsg(){
       return {label:v.VersionLabel,fecha:v.Created,arr:arr,fechas:fechas,total:arr.length};
     });
     window._recupAsgVersiones=filas;
-    var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:760px;width:97%;max-height:88vh;overflow:auto">';
+    var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:760px;width:97%;max-height:88vh;overflow:auto">';
     mh+='<h2>🕘 Recuperar Asignaciones — versiones y copias anteriores</h2>';
     mh+=avisoVersionado;
     mh+='<p style="font-size:12px;color:#718096;margin-bottom:10px">Estas son las versiones guardadas del registro "asg" en SharePoint y las copias de seguridad diarias de la app. Elige una y luego selecciona las fechas que quieres restaurar. La restauración solo <b>agrega</b> registros que falten, no borra ni duplica nada existente.</p>';
@@ -4910,7 +4911,7 @@ async function modalRecuperarAsg(){
     mh+='</div></div>';
     document.getElementById('modalContainer').innerHTML=mh;
   }catch(e){
-    document.getElementById('modalContainer').innerHTML='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:560px;width:96%">'+
+    document.getElementById('modalContainer').innerHTML='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:560px;width:96%">'+
       '<h2>🕘 Recuperar Asignaciones</h2><p style="font-size:13px;color:#c53030">Error: '+e.message+'</p>'+
       '<div style="display:flex;gap:6px;margin-top:14px"><button class="btn btn-d" onclick="cerrarModal()">Cerrar</button></div></div></div>';
   }
@@ -4918,7 +4919,7 @@ async function modalRecuperarAsg(){
 function modalRecuperarAsgDetalle(i){
   var f=(window._recupAsgVersiones||[])[i];if(!f)return;
   var fechasOrd=Object.keys(f.fechas).sort();
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:620px;width:96%;max-height:88vh;overflow:auto">';
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:620px;width:96%;max-height:88vh;overflow:auto">';
   mh+='<h2>🕘 Restaurar versión '+f.label+'</h2>';
   mh+='<p style="font-size:12px;color:#718096;margin-bottom:10px">Guardado: '+new Date(f.fecha).toLocaleString()+'. Marca las fechas que quieres restaurar. Se agregarán los registros de esa fecha que aún no existan en tus datos actuales (comparando trabajador + actividad). No se borra ni duplica nada.</p>';
   mh+='<div style="max-height:320px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px;padding:8px">';
