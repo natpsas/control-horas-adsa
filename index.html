@@ -4352,7 +4352,7 @@ function modalAsignacionMasiva(){
     areas[t.area].push(t);
   });
   var lim=amHorasDefecto(fechaSel);
-  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:920px;width:98%;max-height:92vh;overflow:auto">';
+  var mh='<div class="modal-bg" onclick="if(event.target===this)cerrarModal()"><div class="modal" style="max-width:1180px;width:98%;max-height:96vh;overflow:auto">';
   mh+='<h2>👥 Asignación Masiva — Mix de actividades</h2>';
   mh+='<p style="font-size:12px;color:#718096;margin-bottom:12px">1️⃣ Armá el <b>mix</b>: agregá actividades con sus módulos y horas &nbsp;→&nbsp; 2️⃣ Elegí las personas. Cada persona recibe <b>todas</b> las actividades del mix.</p>';
 
@@ -4366,7 +4366,7 @@ function modalAsignacionMasiva(){
   mh+='<div style="border:1.5px dashed #93c5fd;border-radius:8px;padding:10px;background:#fff">';
   mh+='<label style="font-size:12px;font-weight:700;color:#2b6cb0;display:block;margin-bottom:4px">➕ Agregar actividad al mix</label>';
   mh+='<input type="text" id="amBusqAct" placeholder="🔍 Buscar actividad por nombre, código, categoría o unidad..." oninput="amBuscarAct()" style="margin-bottom:4px">';
-  mh+='<select id="amAct" onchange="amCambioAct()" size="5" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
+  mh+='<select id="amAct" onchange="amCambioAct()" size="10" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
   mh+='<option value="">-- Selecciona actividad --</option>';
   var lastUni='';
   ACT.filter(function(a){return a.activo}).forEach(function(a){
@@ -4400,7 +4400,7 @@ function modalAsignacionMasiva(){
   mh+='<span id="amCount" style="font-size:11px;color:#718096;margin-left:auto;white-space:nowrap">0 seleccionados</span>';
   mh+='</div>';
 
-  mh+='<div style="max-height:340px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px">';
+  mh+='<div style="max-height:52vh;min-height:300px;overflow-y:auto;border:2px solid #e2e8f0;border-radius:8px">';
   mh+='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0;background:#f7fafc;z-index:1"><tr>';
   mh+='<th style="width:34px;padding:6px"></th><th style="text-align:left;padding:6px">Trabajador</th><th style="text-align:left;padding:6px">Área</th></tr></thead><tbody id="amTbody">';
   for(var area in areas){
