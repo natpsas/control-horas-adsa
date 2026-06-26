@@ -355,8 +355,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 
 <div class="card"><h2>📋 Actividades</h2>
 <div class="fb"><select id="gFltU" onchange="document.getElementById('gFltC').value='';renderGAct()"><option value="">Todas unidades</option></select><select id="gFltC" onchange="renderGAct()"><option value="">Todas categorías</option></select></div>
-<table><thead><tr><th>Código</th><th>Categoría</th><th>SubCategoría</th><th>Ind.</th><th>Módulo</th><th>Aprobador</th><th>Acciones</th></tr></thead><tbody id="g2"></tbody></table>
-<div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalAct()">+ Agregar</button><button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:none;font-weight:600;padding:4px 8px;border-radius:7px;cursor:pointer;font-size:11px" onclick="modalRenombrarCat()">✏️ Renombrar cat.</button><button class="btn btn-s btn-sm" onclick="expActCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('act')">Importar CSV</button></div>
+<table><thead><tr><th>N°</th><th>Código</th><th>Categoría</th><th>SubCategoría</th><th>Ind.</th><th>Módulo</th><th>Aprobador</th><th>Acciones</th></tr></thead><tbody id="g2"></tbody></table>
+<div class="gestion-admin-actions" style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap"><button class="btn btn-p btn-sm" onclick="modalAct()">+ Agregar</button><button class="btn btn-sm" style="background:#fef3c7;color:#92400e;border:none;font-weight:600;padding:4px 8px;border-radius:7px;cursor:pointer;font-size:11px" onclick="modalAdminCats()">📂 Categorías</button><button class="btn btn-s btn-sm" onclick="expActCSV()">Exportar CSV</button><button class="btn btn-i btn-sm" onclick="impInteligente('act')">Importar CSV</button></div>
 <input type="file" id="csvAct" accept=".csv,.xls,.xlsx" style="display:none" onchange="doImpAct(event)"></div>
 
 <div class="card"><h2>📦 Módulos</h2>
@@ -420,7 +420,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.11 · 2026-06-17';
+var APP_VERSION='v6.15 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1979,7 +1979,7 @@ function hInput(id,val,maxH,onChg){
   val=parseFloat(val)||0;
   var h=Math.floor(val);
   var mRaw=Math.round((val-h)*60);
-  var opts=[0,10,20,30,40,50];
+  var opts=[0,5,10,15,20,25,30,35,40,45,50,55];
   var m=opts.reduce(function(p,c){return Math.abs(c-mRaw)<Math.abs(p-mRaw)?c:p;});
   if(m>=60){h++;m=0;}
   var ev=onChg?" onchange='"+onChg+"' oninput='"+onChg+"'":'';
@@ -2003,7 +2003,7 @@ function setHInput(id,val){
   val=parseFloat(val)||0;
   var h=Math.floor(val);
   var mRaw=Math.round((val-h)*60);
-  var m=[0,10,20,30,40,50].reduce(function(p,c){return Math.abs(c-mRaw)<Math.abs(p-mRaw)?c:p;});
+  var m=[0,5,10,15,20,25,30,35,40,45,50,55].reduce(function(p,c){return Math.abs(c-mRaw)<Math.abs(p-mRaw)?c:p;});
   if(m>=60){h++;m=0;}
   var hEl=document.getElementById(id+'_h');var mEl=document.getElementById(id+'_m');
   if(hEl)hEl.value=h;
@@ -3656,8 +3656,8 @@ function expNominaCSV(){
       '',                                    // FINCA (en blanco)
       (r.mods||[]).join(', '),               // MODULO
       esExtra?'EXTRAS':'JORNAL',             // JORNAL O KILOS
-      esExtra?'':(r.hr||0),                  // HORAS (jornal normal)
-      esExtra?(r.hr||0):'',                  // HH EXTRAS
+      esExtra?'':(Math.round((r.hr||0)*100)/100),   // HORAS (jornal normal, 2 decimales)
+      esExtra?(Math.round((r.hr||0)*100)/100):'',   // HH EXTRAS (2 decimales)
       Math.round(((r.hr||0)/8)*10000)/10000, // JORNAL = horas / 8 (fracción de jornada)
       0,                                     // KILOS (la plantilla trae 0)
       r.obs||''                              // OBSERVACIONES (las de la fila)
@@ -3946,7 +3946,7 @@ function renderGAct(){var uni=document.getElementById('gFltU').value;var cat=doc
   var html='';var adm=esAdmin();list.forEach(function(a){
     var codCell=adm?'<input type="text" value="'+_esc(a.codigo||'')+'" placeholder="ej: COS" maxlength="10" style="width:70px;padding:2px 5px;border:1.5px solid #e2e8f0;border-radius:4px;font-size:10px;font-weight:700;color:#2b6cb0" onchange="setActCodigo(\''+a.id+'\',this.value)" title="Código corto para usar en CSV de importación">'
       :'<span style="font-size:10px;font-weight:700;color:#2b6cb0">'+(a.codigo||'—')+'</span>';
-    html+='<tr style="'+(a.activo?'':'opacity:.5')+'"><td>'+codCell+'</td><td style="font-size:10px">'+a.categoria+'</td><td style="font-size:10px">'+a.subcategoria+'</td><td style="font-size:10px">'+(a.indicador||'-')+'</td>';
+    html+='<tr style="'+(a.activo?'':'opacity:.5')+'"><td style="font-size:11px;font-weight:700;color:#718096;text-align:center">'+a.id+'</td><td>'+codCell+'</td><td style="font-size:10px">'+a.categoria+'</td><td style="font-size:10px">'+a.subcategoria+'</td><td style="font-size:10px">'+(a.indicador||'-')+'</td>';
     // Columna Módulo
     html+='<td style="text-align:center">';
     if(adm){html+='<button class="btn btn-sm" style="font-size:10px;background:'+(a.usa_modulo?'#c6f6d5;color:#276749':'#fecaca;color:#991b1b')+'" onclick="togUsaModulo(\''+a.id+'\')">'+(a.usa_modulo?'Sí':'No')+'</button>';}
@@ -4077,9 +4077,29 @@ function modalMod(id){if(!soloAdmin())return;var isNew=!id;var m=isNew?{id:'',no
 function doSaveMod(){var mode=document.getElementById('mMMode').value;var mi=document.getElementById('mMI').value.trim(),mn=document.getElementById('mMN').value.trim(),mu=document.getElementById('mMU').value;
   var inc=document.getElementById('mMInc')?document.getElementById('mMInc').checked:true;
   if(!mi||!mn){alert('ID y nombre requeridos');return}if(mode==='new'){if(MOD.find(function(x){return x.id===mi})){alert('Ya existe');return}MOD.push({id:mi,nombre:mn,unidad:mu,activo:true,incluir_en_todos:inc})}else{var m=MOD.find(function(x){return x.id===mode});if(m){m.nombre=mn;m.unidad=mu;m.incluir_en_todos=inc;}}guardarLS();cerrarModal();renderGMod();toast('✅ Módulo guardado')}
+// Opciones <datalist> de categor\u00edas y subcategor\u00edas existentes (para los combos)
+function _dlCats(uni){
+  var seen={},out='';
+  ACT.forEach(function(a){if((!uni||a.unidad===uni)&&a.categoria&&!seen[a.categoria]){seen[a.categoria]=1;out+='<option value="'+_esc(a.categoria)+'">';}});
+  return out;
+}
+function _dlSubs(uni,cat){
+  var seen={},out='';
+  ACT.forEach(function(a){if((!uni||a.unidad===uni)&&(!cat||a.categoria===cat)&&a.subcategoria&&!seen[a.subcategoria]){seen[a.subcategoria]=1;out+='<option value="'+_esc(a.subcategoria)+'">';}});
+  return out;
+}
+// Refresca las opciones de los combos seg\u00fan la unidad/categor\u00eda elegida (cascada)
+function actDLRefresh(uSel,cInp,sInp,dlC,dlS){
+  var uni=(document.getElementById(uSel)||{}).value||'';
+  var cat=(document.getElementById(cInp)||{}).value||'';
+  var dc=document.getElementById(dlC);if(dc)dc.innerHTML=_dlCats(uni);
+  var ds=document.getElementById(dlS);if(ds)ds.innerHTML=_dlSubs(uni,cat);
+}
 function modalAct(){if(!soloAdmin())return;var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Agregar Actividad</h2>';
-  mh+='<div class="fg"><label>Unidad</label><select id="mAU">';UNI.forEach(function(u){mh+='<option value="'+u.id+'">'+u.id+'</option>'});
-  mh+='</select></div><div class="fg"><label>Categor\u00eda</label><input id="mAC"></div><div class="fg"><label>SubCategor\u00eda</label><input id="mAS"></div>';
+  mh+='<div class="fg"><label>Unidad</label><select id="mAU" onchange="actDLRefresh(\'mAU\',\'mAC\',\'mAS\',\'dlMAC\',\'dlMAS\')">';UNI.forEach(function(u){mh+='<option value="'+u.id+'">'+u.id+'</option>'});
+  mh+='</select></div>';
+  mh+='<div class="fg"><label>Categor\u00eda <span style="color:#a0aec0;font-weight:400;font-size:10px">(eleg\u00ed una existente o escrib\u00ed una nueva)</span></label><input id="mAC" list="dlMAC" autocomplete="off" placeholder="Buscar o crear categor\u00eda..." oninput="actDLRefresh(\'mAU\',\'mAC\',\'mAS\',\'dlMAC\',\'dlMAS\')"><datalist id="dlMAC">'+_dlCats('')+'</datalist></div>';
+  mh+='<div class="fg"><label>SubCategor\u00eda <span style="color:#a0aec0;font-weight:400;font-size:10px">(eleg\u00ed una existente o escrib\u00ed una nueva)</span></label><input id="mAS" list="dlMAS" autocomplete="off" placeholder="Buscar o crear subcategor\u00eda..."><datalist id="dlMAS">'+_dlSubs('','')+'</datalist></div>';
   mh+='<div class="fg"><label>Indicador</label><input id="mAI"></div><div class="fg"><label>Desc. Rendimiento</label><input id="mAD"></div>';
   mh+='<div class="fg"><label>Aprobador (cargo)</label><select id="mAP"><option value="ADMIN">Admin</option>';CARGOS.forEach(function(c){mh+='<option value="'+c.id+'">'+c.nombre+'</option>'});
   mh+='</select></div><div style="display:flex;gap:6px;margin-top:12px"><button class="btn btn-s" onclick="doSaveAct()">Guardar</button><button class="btn btn-d" onclick="cerrarModal()">Cancelar</button></div></div></div>';
@@ -4104,11 +4124,11 @@ function modalEditAct(id){
   var a=ACT.find(function(x){return x.id===id});if(!a)return;
   var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Editar Actividad #'+_esc(a.id)+'</h2>';
   mh+='<input type="hidden" id="eAId" value="'+_esc(a.id)+'">';
-  mh+='<div class="fg"><label>Unidad</label><select id="eAU">';
+  mh+='<div class="fg"><label>Unidad</label><select id="eAU" onchange="actDLRefresh(\'eAU\',\'eAC\',\'eAS\',\'dlEAC\',\'dlEAS\')">';
   UNI.forEach(function(u){mh+='<option value="'+_esc(u.id)+'"'+(a.unidad===u.id?' selected':'')+'>'+_esc(u.id)+'</option>'});
   mh+='</select></div>';
-  mh+='<div class="fg"><label>Categoría</label><input id="eAC" value="'+_esc(a.categoria)+'"></div>';
-  mh+='<div class="grid-2"><div class="fg"><label>SubCategoría</label><input id="eAS" value="'+_esc(a.subcategoria)+'"></div>';
+  mh+='<div class="fg"><label>Categoría <span style="color:#a0aec0;font-weight:400;font-size:10px">(existente o nueva)</span></label><input id="eAC" list="dlEAC" autocomplete="off" value="'+_esc(a.categoria)+'" oninput="actDLRefresh(\'eAU\',\'eAC\',\'eAS\',\'dlEAC\',\'dlEAS\')"><datalist id="dlEAC">'+_dlCats(a.unidad)+'</datalist></div>';
+  mh+='<div class="grid-2"><div class="fg"><label>SubCategoría <span style="color:#a0aec0;font-weight:400;font-size:10px">(existente o nueva)</span></label><input id="eAS" list="dlEAS" autocomplete="off" value="'+_esc(a.subcategoria)+'"><datalist id="dlEAS">'+_dlSubs(a.unidad,a.categoria)+'</datalist></div>';
   mh+='<div class="fg"><label>Código corto <span style="color:#a0aec0;font-weight:400;font-size:10px">(para CSV, ej: COS, RIEGO)</span></label><input id="eACod" value="'+_esc(a.codigo||'')+'" maxlength="10" placeholder="ej: COS" style="font-weight:700;color:#2b6cb0"></div></div>';
   mh+='<div class="grid-2">';
   mh+='<div class="fg"><label>Indicador</label><input id="eAI" value="'+_esc(a.indicador||'')+'"></div>';
@@ -4179,6 +4199,42 @@ function doRenombrarCat(){
       Promise.all(afect.slice(i,i+5).map(function(a){return spGuardarActividad(a).then(function(){ok++;}).catch(function(){err++;})})).then(function(){syn(i+5);});
     })(0);
   }
+}
+// === ADMINISTRAR CATEGORÍAS ===
+function modalAdminCats(){
+  if(!soloAdmin())return;
+  var map={};
+  ACT.forEach(function(a){
+    var c=a.categoria||'(Sin categoría)';
+    if(!map[c])map[c]={n:0,unis:{}};
+    map[c].n++;if(a.unidad)map[c].unis[a.unidad]=1;
+  });
+  var cats=Object.keys(map).sort();
+  window._adminCats=cats;
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:640px;width:96%;max-height:90vh;overflow:auto"><h2>📂 Administrar Categorías</h2>';
+  mh+='<p style="font-size:12px;color:#718096;margin-bottom:10px">Renombrar cambia el nombre en <b>todas</b> las actividades de esa categoría a la vez. ('+cats.length+' categorías)</p>';
+  mh+='<div style="overflow-x:auto;border:1.5px solid #e2e8f0;border-radius:8px;max-height:60vh;overflow-y:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead style="position:sticky;top:0"><tr style="background:#f7fafc"><th style="text-align:left;padding:6px 8px">Categoría</th><th style="text-align:left;padding:6px 8px">Unidad(es)</th><th style="text-align:center;padding:6px 8px">Activ.</th><th style="width:96px"></th></tr></thead><tbody>';
+  cats.forEach(function(c,i){
+    mh+='<tr style="border-bottom:1px solid #f0f4f8"><td style="padding:6px 8px;font-weight:600">'+_esc(c)+'</td><td style="padding:6px 8px;font-size:11px;color:#718096">'+_esc(Object.keys(map[c].unis).join(', '))+'</td><td style="text-align:center;padding:6px 8px">'+map[c].n+'</td><td style="text-align:center"><button class="btn btn-i btn-sm" style="font-size:10px" onclick="renombrarCatIdx('+i+')">✏️ Renombrar</button></td></tr>';
+  });
+  mh+='</tbody></table></div>';
+  mh+='<div style="margin-top:12px"><button class="btn btn-d" onclick="cerrarModal()">Cerrar</button></div></div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+}
+function renombrarCatIdx(i){
+  var cats=window._adminCats||[];var old=cats[i];if(!old)return;
+  var nuevo=prompt('Nuevo nombre para la categoría:\n\n"'+old+'"\n\n(se aplica a todas sus actividades)',old);
+  if(nuevo===null)return;nuevo=nuevo.trim();
+  if(!nuevo){alert('El nombre no puede quedar vacío.');return;}
+  if(nuevo===old){return;}
+  var n=0;ACT.forEach(function(a){if((a.categoria||'(Sin categoría)')===old){a.categoria=nuevo;n++;}});
+  guardarLS();renderGAct();
+  toast('✅ '+n+' actividad'+(n!==1?'es':'')+' → "'+nuevo+'"','info',3500);
+  if(SP_READY){
+    var afect=ACT.filter(function(a){return a.categoria===nuevo});
+    (function syn(k){if(k>=afect.length)return;Promise.all(afect.slice(k,k+5).map(function(a){return spGuardarActividad(a).catch(function(){});})).then(function(){syn(k+5);});})(0);
+  }
+  modalAdminCats(); // refrescar la lista
 }
 function modalUsr(){if(!soloAdmin())return;var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal"><h2>Agregar Usuario</h2>';
   mh+='<div class="fg"><label>Usuario</label><input id="mUU"></div><div class="fg"><label>Clave</label><input type="password" id="mUP"></div>';
