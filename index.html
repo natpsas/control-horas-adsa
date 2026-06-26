@@ -316,7 +316,8 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   </div>
   <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px">
     <button class="btn btn-p" onclick="expCSV()">📥 Exportar Excel</button>
-    <button class="btn btn-s" onclick="expNominaCSV()" style="background:#276749;border-color:#276749" title="Exporta el rango como CSV con el formato de nómina (fecha de pago, semana, jornal/extras...)">🧾 CSV Nómina</button>
+    <button class="btn btn-s" onclick="expNominaCSV('es')" style="background:#276749;border-color:#276749" title="CSV Nómina formato español: coma decimal (7,83) y columnas separadas por punto y coma. Para Excel en español.">🧾 Nómina (coma ,)</button>
+    <button class="btn btn-s" onclick="expNominaCSV('us')" style="background:#2c5282;border-color:#2c5282" title="CSV Nómina formato internacional: punto decimal (7.83) y columnas separadas por coma.">🧾 Nómina (punto .)</button>
     <button class="btn btn-d" onclick="archivarPeriodo()" style="background:#744210;border-color:#744210" title="Exporta el rango a Excel y luego lo elimina de memoria">📦 Archivar y limpiar</button>
   </div>
   <hr style="border:none;border-top:1px solid #e2e8f0;margin:10px 0">
@@ -420,7 +421,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.15 · 2026-06-17';
+var APP_VERSION='v6.17 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -3631,7 +3632,13 @@ function _semanaNomina(fStr){
   return String(yy<10?'0'+yy:yy)+'_'+(ww<10?'0'+ww:ww);
 }
 function _csvCampo(v){v=(v===null||v===undefined)?'':String(v);return '"'+v.replace(/"/g,'""')+'"';}
-function expNominaCSV(){
+// Número con coma decimal (formato español de Excel). '' si está vacío.
+function _numES(n){return (n===''||n===null||n===undefined)?'':String(n).replace('.',',');}
+// fmt: 'es' = coma decimal + ; (Excel español) · 'us' = punto decimal + , (internacional)
+function expNominaCSV(fmt){
+  var esES=(fmt!=='us'); // por defecto, español
+  var sep=esES?';':',';
+  var num=esES?_numES:function(n){return (n===''||n===null||n===undefined)?'':String(n);};
   var f=filtrarParaExport(); // usa el rango de fechas de Reportes (Desde / Hasta)
   // Solo registros APROBADOS (los pendientes/rechazados no se pagan)
   var aprob=f.reg.filter(function(r){return r.st==='aprobado';});
@@ -3641,7 +3648,7 @@ function expNominaCSV(){
     return;
   }
   var cols=['FECHA DE PAGO','No Hoja Asistencia','FECHA','SEMANA','\u00c1REA','TRABAJADOR','DETALLE ACTIVIDAD','FINCA','MODULO','JORNAL O KILOS','HORAS','HH EXTRAS','JORNAL','KILOS','OBSERVACIONES'];
-  var csv=cols.map(_csvCampo).join(',')+'\n';
+  var csv=cols.map(_csvCampo).join(sep)+'\n';
   var rows=aprob.slice().sort(function(a,b){return a.f!==b.f?a.f.localeCompare(b.f):(a.n||'').localeCompare(b.n||'');});
   rows.forEach(function(r){
     var esExtra=r.tp==='EXTRAS';
@@ -3656,18 +3663,18 @@ function expNominaCSV(){
       '',                                    // FINCA (en blanco)
       (r.mods||[]).join(', '),               // MODULO
       esExtra?'EXTRAS':'JORNAL',             // JORNAL O KILOS
-      esExtra?'':(Math.round((r.hr||0)*100)/100),   // HORAS (jornal normal, 2 decimales)
-      esExtra?(Math.round((r.hr||0)*100)/100):'',   // HH EXTRAS (2 decimales)
-      Math.round(((r.hr||0)/8)*10000)/10000, // JORNAL = horas / 8 (fracción de jornada)
-      0,                                     // KILOS (la plantilla trae 0)
+      esExtra?'':num(Math.round((r.hr||0)*100)/100),   // HORAS (jornal normal, 2 decimales)
+      esExtra?num(Math.round((r.hr||0)*100)/100):'',   // HH EXTRAS (2 decimales)
+      num(Math.round(((r.hr||0)/8)*10000)/10000),      // JORNAL = horas / 8 (fracción de jornada)
+      num(0),                                // KILOS (la plantilla trae 0)
       r.obs||''                              // OBSERVACIONES (las de la fila)
     ];
-    csv+=fila.map(_csvCampo).join(',')+'\n';
+    csv+=fila.map(_csvCampo).join(sep)+'\n';
   });
   var b=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8;'});
   var l=document.createElement('a');l.href=URL.createObjectURL(b);
-  l.download='nomina-'+(f.desde||'todo')+(f.hasta&&f.hasta!==f.desde?'_'+f.hasta:'')+'.csv';l.click();
-  toast('\u2705 CSV de n\u00f3mina exportado ('+aprob.length+' filas aprobadas)');
+  l.download='nomina-'+(f.desde||'todo')+(f.hasta&&f.hasta!==f.desde?'_'+f.hasta:'')+(esES?'-coma':'-punto')+'.csv';l.click();
+  toast('\u2705 CSV de n\u00f3mina ('+(esES?'coma decimal':'punto decimal')+') \u2014 '+aprob.length+' filas aprobadas');
 }
 function expJSON(){var data={fecha:new Date().toISOString(),asg:asg,reg:reg,hue:hue,TRB:TRB,ACT:ACT,MOD:MOD,UNI:UNI,CARGOS:CARGOS,usr:usr};var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='backup-'+fechaSel+'.json';l.click()}
 function impJSON(){document.getElementById('impFile').click()}
