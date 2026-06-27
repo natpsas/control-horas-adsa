@@ -318,6 +318,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     <button class="btn btn-p" onclick="expCSV()">📥 Exportar Excel</button>
     <button class="btn btn-s" onclick="expNominaCSV('es')" style="background:#276749;border-color:#276749" title="CSV Nómina formato español: coma decimal (7,83) y columnas separadas por punto y coma. Para Excel en español.">🧾 Nómina (coma ,)</button>
     <button class="btn btn-s" onclick="expNominaCSV('us')" style="background:#2c5282;border-color:#2c5282" title="CSV Nómina formato internacional: punto decimal (7.83) y columnas separadas por coma.">🧾 Nómina (punto .)</button>
+    <button class="btn btn-i" onclick="modalMatrizHoras()" title="Matriz de horas por día: una columna por día, filas por trabajador, normales y extras">📅 Matriz horas/día</button>
     <button class="btn btn-d" onclick="archivarPeriodo()" style="background:#744210;border-color:#744210" title="Exporta el rango a Excel y luego lo elimina de memoria">📦 Archivar y limpiar</button>
   </div>
   <hr style="border:none;border-top:1px solid #e2e8f0;margin:10px 0">
@@ -421,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.17 · 2026-06-17';
+var APP_VERSION='v6.22 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -569,6 +570,7 @@ function checkLSCapacidad(){
   }catch(e){}
 }
 function guardarLS(){
+  dedupAsg();dedupReg(); // colapsa duplicados antes de persistir (evita 16h por carrera/edición tras aprobar)
   localStorage.setItem('asg',JSON.stringify(asg));localStorage.setItem('reg',JSON.stringify(reg));
   localStorage.setItem('hue',JSON.stringify(hue));localStorage.setItem('usr',JSON.stringify(usr));
   localStorage.setItem('TRB_custom',JSON.stringify(TRB));localStorage.setItem('ACT_custom',JSON.stringify(ACT));
@@ -641,6 +643,51 @@ function _pushAsg(entry){
   if(!entry.creadoPor)entry.creadoPor=usuarioLogueado||'';
   _asgTombClear(entry._key); // si se recrea una clave borrada, deja de estar enterrada
   asg.push(entry);
+}
+// Colapsa asignaciones DUPLICADAS (misma fecha+trabajador+actividad). Dos con la
+// misma clave SIEMPRE son un error (todas las creaciones deduplican), normalmente
+// por una carrera de sincronización entre dispositivos. Evita que una persona
+// quede con la actividad dos veces (= 16h en vez de 8h). Devuelve cuántas quitó.
+function dedupAsg(){
+  var visto={},out=[],dups=0;
+  asg.forEach(function(a){
+    var k=a._key||_asgKey(a);
+    var prev=visto[k];
+    if(prev){
+      dups++;
+      // conservar la "mejor": la que ya está en SP (_spId) o la sincronizada (_hash)
+      if((!prev._spId&&a._spId)||(!prev._hash&&a._hash)){
+        var idx=out.indexOf(prev);if(idx>=0)out[idx]=a;visto[k]=a;
+      }
+      return; // descartar el duplicado
+    }
+    visto[k]=a;out.push(a);
+  });
+  if(dups>0){asg=out;console.warn('dedupAsg: se colapsaron '+dups+' asignación(es) duplicada(s).');}
+  return dups;
+}
+// Colapsa REGISTROS consolidados duplicados (misma fecha+trabajador+actividad+tipo).
+// Un trabajador puede tener, como mucho, 1 fila NORMAL y 1 EXTRAS por actividad/día;
+// dos del mismo tipo siempre son un duplicado (típicamente al editar TRAS aprobar).
+// Conserva la "mejor" (aprobada / con _spId) y marca la sobrante para borrar de SP.
+function dedupReg(){
+  var visto={},out=[],dups=0;
+  reg.forEach(function(r){
+    var k=(r.f||'')+'|'+(r.w||'')+'|'+(r.act||'')+'|'+(r.tp||'NORMAL');
+    var prev=visto[k];
+    if(prev){
+      dups++;
+      var rMejor=((r.st==='aprobado')&&prev.st!=='aprobado')||(r.st===prev.st&&!prev._spId&&r._spId);
+      var quitar;
+      if(rMejor){quitar=prev;var idx=out.indexOf(prev);if(idx>=0)out[idx]=r;visto[k]=r;}
+      else{quitar=r;}
+      if(quitar.id)_regTombAdd(quitar.id); // borrar de SP la copia sobrante
+      return;
+    }
+    visto[k]=r;out.push(r);
+  });
+  if(dups>0){reg=out;console.warn('dedupReg: se colapsaron '+dups+' registro(s) duplicado(s).');}
+  return dups;
 }
 async function guardarAsignaciones(){
   guardarModsEnMem();guardarModsConsol();
@@ -1330,6 +1377,7 @@ async function spCargarRegistros(){
       return !spByNatKey[(x.f||'')+'|'+(x.w||'')+'|'+(x.act||'')];
     });
     reg=spRegs.concat(localToKeep);
+    dedupReg(); // colapsa registros duplicados que pudieran venir de SP (edición tras aprobar)
     localStorage.setItem('reg',JSON.stringify(reg));
     console.log('SP Registros cargados: '+spRegs.length+(localToKeep.length?' + '+localToKeep.length+' locales pendientes':''));
   }catch(e){console.warn('spCargarRegistros:',e.message);}
@@ -1562,6 +1610,7 @@ async function spCargar(){
       var spByKeyAsg={};spAsgRows.forEach(function(a){spByKeyAsg[a._key]=1;});
       var localPendAsg=asg.filter(function(a){return !a._hash&&!spByKeyAsg[a._key||_asgKey(a)]&&_asgTomb.indexOf(a._key||_asgKey(a))<0;});
       asg=spAsgRows.concat(localPendAsg);
+      dedupAsg(); // por si una carrera dejó claves repetidas
       localStorage.setItem('asg',JSON.stringify(asg));
       console.log('ASG desde lista propia: '+spAsgRows.length+(localPendAsg.length?' + '+localPendAsg.length+' locales pendientes':''));
     }catch(e){console.warn('spCargarAsignaciones error (usando blob como respaldo):',e.message);}
@@ -2838,8 +2887,8 @@ function desconsolidar(cod){
       if(r.rend!=null)aEntry.rend=r.rend;
       if(r.mods&&r.mods.length)aEntry.mods=r.mods;
     }else{
-      // Recrear entrada asg desde el registro consolidado
-      asg.push({f:fechaSel,w:cod,act:r.act,uni:r.uni,h:r.h,x:false,mods:r.mods||[],na:false,mt:'',obs:'',rend:r.rend||null});
+      // Recrear entrada asg desde el registro consolidado (con dedup/clave segura)
+      _pushAsg({f:fechaSel,w:cod,act:r.act,uni:r.uni,h:r.h,x:false,mods:r.mods||[],na:false,mt:'',obs:'',rend:r.rend||null});
     }
   });
   reg=reg.filter(function(r){return !(r.w===cod&&r.f===fechaSel)});
@@ -3340,6 +3389,31 @@ function renderT4(){
   html+=kpi('H. Total',(hNAll+hEAll).toFixed(1)+'h','#bee3f8');
   html+='</div>';
   if(!base.length){html+='<p style="color:#a0aec0;text-align:center;padding:16px">Sin registros con los filtros seleccionados</p>';document.getElementById('t4Sum').innerHTML=html;return;}
+  // --- VALIDACIÓN: horas NORMALES que exceden la jornada base (8h L–V / 4h Sáb) ---
+  var _limJor=function(fStr){var d=new Date(fStr+'T12:00:00').getDay();return d===6?4:(d===0?0:8);};
+  var normWD={};
+  base.forEach(function(r){
+    if(r.tp==='EXTRAS')return; // solo horas normales
+    var k=r.w+'|'+r.f;
+    if(!normWD[k])normWD[k]={w:r.w,n:r.n,ar:r.ar,f:r.f,hN:0,acts:[]};
+    normWD[k].hN+=r.hr||0;
+    if(r.sub&&normWD[k].acts.indexOf(r.sub)<0)normWD[k].acts.push(r.sub);
+  });
+  var excesos=[];
+  Object.keys(normWD).forEach(function(k){var o=normWD[k];var lim=_limJor(o.f);if(Math.round(o.hN*100)/100>lim){o.lim=lim;o.exc=Math.round((o.hN-lim)*100)/100;excesos.push(o);}});
+  excesos.sort(function(a,b){return b.exc-a.exc||(a.f>b.f?1:-1);});
+  html+='<h3 style="font-size:13px;font-weight:700;color:#2d3748;margin:4px 0 6px">⏱ Validación de jornada <span style="font-weight:400;color:#a0aec0;font-size:11px">(horas NORMALES vs 8h L–V / 4h Sáb)</span></h3>';
+  if(!excesos.length){
+    html+='<div style="background:#f0fff4;border:1.5px solid #9ae6b4;color:#276749;border-radius:8px;padding:9px 12px;margin-bottom:16px;font-weight:600;font-size:12px">✓ Ninguna persona excede la jornada normal en el período seleccionado.</div>';
+  }else{
+    html+='<div style="background:#fff5f5;border:2px solid #fc8181;border-radius:8px;padding:6px;margin-bottom:16px">';
+    html+='<div style="color:#c53030;font-weight:700;font-size:12px;padding:5px 6px">⚠️ '+excesos.length+' caso(s) superan la jornada normal — revisá posibles duplicados o extras mal marcadas:</div>';
+    html+='<div style="overflow-x:auto"><table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="background:#fff"><th style="text-align:left;padding:5px 8px">Fecha</th><th style="text-align:left;padding:5px 8px">Trabajador</th><th style="text-align:left;padding:5px 8px">Área</th><th style="text-align:center;padding:5px 8px">H.Normal</th><th style="text-align:center;padding:5px 8px">Máx</th><th style="text-align:center;padding:5px 8px">Exceso</th><th style="text-align:left;padding:5px 8px">Actividades</th></tr></thead><tbody>';
+    excesos.forEach(function(o){
+      html+='<tr style="border-bottom:1px solid #fed7d7"><td style="padding:5px 8px;white-space:nowrap">'+o.f+'</td><td style="padding:5px 8px;font-weight:700;color:#c53030">'+o.n+'</td><td style="padding:5px 8px;font-size:11px;color:#718096">'+o.ar+'</td><td style="text-align:center;padding:5px 8px;font-weight:700;color:#c53030">'+o.hN.toFixed(1)+'h</td><td style="text-align:center;padding:5px 8px">'+o.lim+'h</td><td style="text-align:center;padding:5px 8px;font-weight:700;color:#c53030">+'+o.exc.toFixed(1)+'h</td><td style="padding:5px 8px;font-size:11px;color:#4a5568">'+o.acts.join(', ')+'</td></tr>';
+    });
+    html+='</tbody></table></div></div>';
+  }
   // --- Tabla por Área ---
   var byArea={};
   base.forEach(function(r){
@@ -3675,6 +3749,111 @@ function expNominaCSV(fmt){
   var l=document.createElement('a');l.href=URL.createObjectURL(b);
   l.download='nomina-'+(f.desde||'todo')+(f.hasta&&f.hasta!==f.desde?'_'+f.hasta:'')+(esES?'-coma':'-punto')+'.csv';l.click();
   toast('\u2705 CSV de n\u00f3mina ('+(esES?'coma decimal':'punto decimal')+') \u2014 '+aprob.length+' filas aprobadas');
+}
+// === MATRIZ DE HORAS POR DÍA (pivot: trabajador × día) ===
+function _matrizData(desde,hasta){
+  var dias=[];var d=new Date(desde+'T12:00:00');var end=new Date(hasta+'T12:00:00');
+  while(d<=end){dias.push(_fmtFechaCorta(d));d.setDate(d.getDate()+1);}
+  var byW={};
+  reg.forEach(function(r){
+    if(!r.f||r.f<desde||r.f>hasta)return;
+    if(!byW[r.w])byW[r.w]={w:r.w,n:r.n||r.w,ar:r.ar||'',d:{},totN:0,totE:0};
+    var o=byW[r.w];if(!o.d[r.f])o.d[r.f]={N:0,E:0};
+    if(r.tp==='EXTRAS'){o.d[r.f].E+=r.hr||0;o.totE+=r.hr||0;}
+    else{o.d[r.f].N+=r.hr||0;o.totN+=r.hr||0;}
+  });
+  var filas=Object.keys(byW).map(function(k){return byW[k];}).sort(function(a,b){return a.n.localeCompare(b.n);});
+  return {dias:dias,filas:filas};
+}
+function modalMatrizHoras(){
+  var r=getExpRango();
+  var hoy=new Date();var ym=hoy.getFullYear()+'-'+String(hoy.getMonth()+1).padStart(2,'0');
+  var desde=r.desde||(ym+'-01');
+  var hasta=r.hasta||_fmtFechaCorta(hoy);
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:96vw;width:96vw;max-height:94vh;overflow:auto">';
+  mh+='<h2>📅 Matriz de horas por día</h2>';
+  mh+='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">';
+  mh+='<div class="fg" style="margin:0"><label>Desde</label><input type="date" id="mxDesde" value="'+desde+'"></div>';
+  mh+='<div class="fg" style="margin:0"><label>Hasta</label><input type="date" id="mxHasta" value="'+hasta+'"></div>';
+  mh+='<button class="btn btn-s" onclick="renderMatrizHoras()">Generar</button>';
+  mh+='<button class="btn btn-i" onclick="expMatrizHorasCSV()">📥 Exportar CSV</button>';
+  mh+='<button class="btn btn-d" style="margin-left:auto" onclick="cerrarModal()">Cerrar</button>';
+  mh+='</div><div id="mxBody"></div></div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+  renderMatrizHoras();
+}
+function renderMatrizHoras(){
+  var desde=document.getElementById('mxDesde').value,hasta=document.getElementById('mxHasta').value;
+  var body=document.getElementById('mxBody');if(!body)return;
+  if(!desde||!hasta){body.innerHTML='<p style="color:#a0aec0;padding:8px">Elegí Desde y Hasta.</p>';return;}
+  if(desde>hasta){body.innerHTML='<p style="color:#c53030;padding:8px">El "Desde" es posterior al "Hasta".</p>';return;}
+  var data=_matrizData(desde,hasta);
+  if(data.dias.length>62){body.innerHTML='<p style="color:#c53030;padding:8px">El rango es muy amplio ('+data.dias.length+' días). Elegí hasta ~2 meses.</p>';return;}
+  if(!data.filas.length){body.innerHTML='<p style="color:#a0aec0;padding:8px">Sin registros consolidados en el rango.</p>';return;}
+  function _h(x){return String(Math.round(x*10)/10);}
+  function lim(f){var dd=new Date(f+'T12:00:00').getDay();return dd===6?4:(dd===0?0:8);}
+  var dias3=['Do','Lu','Ma','Mi','Ju','Vi','Sá'];
+  var h='<div style="overflow:auto;max-height:64vh;border:1px solid #e2e8f0;border-radius:8px"><table style="border-collapse:collapse;font-size:11px;white-space:nowrap">';
+  h+='<thead><tr style="background:#f7fafc"><th style="position:sticky;left:0;z-index:2;background:#f7fafc;text-align:left;padding:5px 8px;border:1px solid #e2e8f0">Trabajador</th>';
+  data.dias.forEach(function(f){var dd=new Date(f+'T12:00:00');var dom=dd.getDay()===0;h+='<th style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;'+(dom?'background:#fed7d7':'')+'">'+dias3[dd.getDay()]+'<br>'+String(dd.getDate())+'</th>';});
+  h+='<th style="padding:4px 6px;border:1px solid #e2e8f0;background:#ebf8ff">Σ Nor</th><th style="padding:4px 6px;border:1px solid #e2e8f0;background:#feebc8">Σ Ext</th><th style="padding:4px 6px;border:1px solid #e2e8f0;background:#e9d8fd">Σ Tot</th></tr></thead><tbody>';
+  data.filas.forEach(function(o){
+    h+='<tr><td style="position:sticky;left:0;background:#fff;font-weight:600;padding:4px 8px;border:1px solid #e2e8f0">'+o.n+'</td>';
+    data.dias.forEach(function(f){
+      var c=o.d[f],cell;
+      if(!c||(!c.N&&!c.E))cell='<span style="color:#cbd5e0">·</span>';
+      else{
+        var over=c.N>lim(f);
+        var nPart=c.N?'<span style="font-weight:600;color:'+(over?'#c53030':'#2d3748')+'">'+_h(c.N)+'</span>':'';
+        var ePart=c.E?'<span style="color:#dd6b20;font-size:10px"> +'+_h(c.E)+'</span>':'';
+        cell=nPart+ePart;
+      }
+      h+='<td style="padding:4px 6px;border:1px solid #f0f4f8;text-align:center">'+cell+'</td>';
+    });
+    h+='<td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;font-weight:700;color:#2b6cb0">'+_h(o.totN)+'</td><td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;font-weight:700;color:#dd6b20">'+_h(o.totE)+'</td><td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;font-weight:800;color:#6b46c1">'+_h(o.totN+o.totE)+'</td></tr>';
+  });
+  // Totales por día: Normal, Extras y Total (suma)
+  var sumN=[],sumE=[],gN=0,gE=0;
+  data.dias.forEach(function(f){var n=0,e=0;data.filas.forEach(function(o){if(o.d[f]){n+=o.d[f].N;e+=o.d[f].E;}});sumN.push(n);sumE.push(e);gN+=n;gE+=e;});
+  function totRow(label,vals,gran,bg,col,bold){
+    var r='<tr style="background:'+bg+'"><td style="position:sticky;left:0;z-index:1;background:'+bg+';padding:4px 8px;border:1px solid #e2e8f0;font-weight:'+(bold?'800':'700')+';color:'+col+'">'+label+'</td>';
+    vals.forEach(function(v){r+='<td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;font-weight:'+(bold?'800':'700')+';color:'+col+'">'+(v?_h(v):'')+'</td>';});
+    r+='<td colspan="3" style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;font-weight:800;color:'+col+'">'+_h(gran)+'</td></tr>';
+    return r;
+  }
+  h+=totRow('Σ Normal / día',sumN,gN,'#ebf8ff','#2b6cb0',false);
+  h+=totRow('Σ Extras / día',sumE,gE,'#feebc8','#dd6b20',false);
+  var sumT=sumN.map(function(n,i){return n+sumE[i];});
+  h+=totRow('Σ TOTAL / día',sumT,gN+gE,'#e9d8fd','#6b46c1',true);
+  h+='</tbody></table></div>';
+  h+='<p style="font-size:10px;color:#a0aec0;margin-top:6px">Negro = horas normales · <span style="color:#dd6b20">naranja +X = extras</span> · <span style="color:#c53030">rojo</span> = la normal supera la jornada (8h L–V / 4h Sáb).</p>';
+  body.innerHTML=h;
+}
+function expMatrizHorasCSV(){
+  var desde=document.getElementById('mxDesde').value,hasta=document.getElementById('mxHasta').value;
+  if(!desde||!hasta||desde>hasta){alert('Rango inválido.');return;}
+  var data=_matrizData(desde,hasta);
+  if(!data.filas.length){alert('Sin datos en el rango.');return;}
+  var cols=['Trabajador','Área'].concat(data.dias).concat(['Total Normal','Total Extras']);
+  var csv=cols.map(_csvCampo).join(';')+'\n';
+  data.filas.forEach(function(o){
+    var fila=[o.n,o.ar];
+    data.dias.forEach(function(f){var c=o.d[f];var tot=c?(c.N+c.E):0;fila.push(_numES(tot?Math.round(tot*100)/100:''));});
+    fila.push(_numES(Math.round(o.totN*100)/100));fila.push(_numES(Math.round(o.totE*100)/100));
+    csv+=fila.map(_csvCampo).join(';')+'\n';
+  });
+  // Filas de totales por día (Normal, Extras, Total)
+  var sumN=[],sumE=[],gN=0,gE=0;
+  data.dias.forEach(function(f){var n=0,e=0;data.filas.forEach(function(o){if(o.d[f]){n+=o.d[f].N;e+=o.d[f].E;}});sumN.push(n);sumE.push(e);gN+=n;gE+=e;});
+  function _totFila(label,vals,gN2,gE2){
+    var fl=[label,''];vals.forEach(function(v){fl.push(_numES(v?Math.round(v*100)/100:''));});fl.push(_numES(Math.round(gN2*100)/100));fl.push(_numES(Math.round(gE2*100)/100));return fl;
+  }
+  csv+=_totFila('TOTAL NORMAL/día',sumN,gN,0).map(_csvCampo).join(';')+'\n';
+  csv+=_totFila('TOTAL EXTRAS/día',sumE,0,gE).map(_csvCampo).join(';')+'\n';
+  csv+=_totFila('TOTAL/día',sumN.map(function(n,i){return n+sumE[i];}),gN,gE).map(_csvCampo).join(';')+'\n';
+  var b=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8;'});
+  var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='matriz-horas-'+desde+'_'+hasta+'.csv';l.click();
+  toast('✅ Matriz exportada ('+data.filas.length+' trabajadores)');
 }
 function expJSON(){var data={fecha:new Date().toISOString(),asg:asg,reg:reg,hue:hue,TRB:TRB,ACT:ACT,MOD:MOD,UNI:UNI,CARGOS:CARGOS,usr:usr};var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='backup-'+fechaSel+'.json';l.click()}
 function impJSON(){document.getElementById('impFile').click()}
