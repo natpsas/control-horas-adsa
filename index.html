@@ -285,6 +285,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
         <option value="pendiente">Pendientes</option>
         <option value="rechazado">Rechazados</option>
       </select>
+      <button class="btn btn-i btn-sm" onclick="modalMatrizHoras()" style="font-size:11px" title="Matriz de horas por día: una columna por día, filas por trabajador, normales y extras">📅 Matriz horas/día</button>
     </div>
   </div>
   <div id="t4Sum"></div>
@@ -318,7 +319,6 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     <button class="btn btn-p" onclick="expCSV()">📥 Exportar Excel</button>
     <button class="btn btn-s" onclick="expNominaCSV('es')" style="background:#276749;border-color:#276749" title="CSV Nómina formato español: coma decimal (7,83) y columnas separadas por punto y coma. Para Excel en español.">🧾 Nómina (coma ,)</button>
     <button class="btn btn-s" onclick="expNominaCSV('us')" style="background:#2c5282;border-color:#2c5282" title="CSV Nómina formato internacional: punto decimal (7.83) y columnas separadas por coma.">🧾 Nómina (punto .)</button>
-    <button class="btn btn-i" onclick="modalMatrizHoras()" title="Matriz de horas por día: una columna por día, filas por trabajador, normales y extras">📅 Matriz horas/día</button>
     <button class="btn btn-d" onclick="archivarPeriodo()" style="background:#744210;border-color:#744210" title="Exporta el rango a Excel y luego lo elimina de memoria">📦 Archivar y limpiar</button>
   </div>
   <hr style="border:none;border-top:1px solid #e2e8f0;margin:10px 0">
@@ -422,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.22 · 2026-06-17';
+var APP_VERSION='v6.23 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
