@@ -422,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.24 · 2026-06-17';
+var APP_VERSION='v6.26 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1175,7 +1175,7 @@ async function spEliminarReg(r){
 var SP_LIST_ASG='ControlHoras_Asignaciones';
 var _SP_ASG_LIST_VERIFIED=null; // null=sin verificar, true/false
 
-function _asgKey(a){return'ASG_'+a.f+'_'+a.w+'_'+(a.act||'NA');}
+function _asgKey(a){return'ASG_'+a.f+'_'+a.w+'_'+(a.act||'NA')+(a.x?'_E':'');}
 function _asgHash(a){
   return _stableStringify({f:a.f,w:a.w,act:a.act,h:a.h,x:!!a.x,
     mods:(a.mods||[]).slice().sort(),obs:a.obs||'',ref:a.ref||'',
@@ -4528,7 +4528,8 @@ function procesarImportAsg(rows){
     if(a.codigo)actByCod[a.codigo.toUpperCase()]=a;
   });
   var trbByCode={};TRB.forEach(function(t){trbByCode[t.codigo]=t;});
-  var modByNombre={};MOD.filter(function(m){return m.activo}).forEach(function(m){modByNombre[(m.nombre||'').toLowerCase().trim()]=m.id;modByNombre[(m.id||'').toLowerCase().trim()]=m.id;});
+  // Índice de módulos tolerante a acentos/espacios: "Modulo 2" == "Módulo 2" == id "2"
+  var modByNombre={};MOD.filter(function(m){return m.activo}).forEach(function(m){modByNombre[normH(m.nombre)]=m.id;modByNombre[normH(m.id)]=m.id;});
   var nuevas=[],errores=[];
   for(var i=1;i<rows.length;i++){
     var row=rows[i];
@@ -4561,9 +4562,10 @@ function procesarImportAsg(rows){
     var mods=[];
     if(modsRaw){
       modsRaw.split(/,|;/).forEach(function(m){
-        var mt=m.trim();
-        var mid=modByNombre[mt.toLowerCase()]||mt;
-        if(mid)mods.push(mid);
+        var mt=m.trim();if(!mt)return;
+        var mid=modByNombre[normH(mt)];              // "Modulo 2" -> id "2" (ignora tildes/espacios)
+        if(!mid)mid=modByNombre[normH(mt.replace(/m[oó]dulo/i,''))]; // "Modulo 2" -> "2" por si acaso
+        mods.push(mid||mt); // si no existe ese módulo, conserva el texto (no se pierde)
       });
     }
     nuevas.push({fecha:fecha,trb:trb,act:act,h:hRaw||8,x:x,mods:mods,obs:obsRaw,ref:refRaw2});
@@ -4604,7 +4606,7 @@ function confirmarImportAsg(nuevas){
   if(!nuevas||!nuevas.length)return;
   var cnt=0,dup=0;
   nuevas.forEach(function(a){
-    var existe=asg.find(function(x){return x.f===a.fecha&&x.w===a.trb.codigo&&String(x.act)===String(a.act.id)&&!x.na;});
+    var existe=asg.find(function(x){return x.f===a.fecha&&x.w===a.trb.codigo&&String(x.act)===String(a.act.id)&&!!x.x===!!a.x&&!x.na;});
     if(existe){dup++;return;}
     _pushAsg({f:a.fecha,w:a.trb.codigo,act:a.act.id,uni:a.act.unidad||'',h:a.h,x:a.x,mods:a.mods,na:false,mt:'',obs:a.obs||'',ref:a.ref||'',rend:null});
     cnt++;
@@ -4870,8 +4872,8 @@ function doAsignacionMasiva(){
     var cod=tr.querySelector('.am-trb').value;
     var trb=TRB.find(function(t){return t.codigo===cod});if(!trb)return;
     _amMix.forEach(function(it){
-      // No duplicar la misma persona+actividad+día
-      if(asg.some(function(a){return a.f===fecha&&a.w===cod&&a.act===it.act&&!a.na;})){dup++;return;}
+      // No duplicar la misma persona+actividad+día+tipo (normal y extra pueden coexistir)
+      if(asg.some(function(a){return a.f===fecha&&a.w===cod&&a.act===it.act&&!!a.x===!!it.x&&!a.na;})){dup++;return;}
       _pushAsg({f:fecha,w:cod,n:trb.nombre,ar:trb.area,act:it.act,uni:it.uni,cat:it.cat,sub:it.sub,h:it.h,x:it.x,mods:(it.mods||[]).slice(),na:false});
       nuevas++;
     });
