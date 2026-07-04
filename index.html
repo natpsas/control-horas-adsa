@@ -422,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.23 · 2026-06-17';
+var APP_VERSION='v6.24 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1650,9 +1650,14 @@ async function spGuardar(){
       // Escribir solo las entradas que cambiaron (comparación por hash)
       var toWriteAsg=asg.filter(function(a){return !a._hash||a._hash!==_asgHash(a);});
       if(toWriteAsg.length){
-        await Promise.all(toWriteAsg.map(function(a){
-          return spEscribirAsg(a).catch(function(e){console.warn('spGuardar asg fila:',e.message);});
-        }));
+        // Subir en LOTES de 5 (no todas a la vez). Cientos de escrituras
+        // simultáneas saturan SharePoint y cierran las conexiones
+        // (ERR_CONNECTION_CLOSED / Failed to fetch), típico tras importar un CSV.
+        for(var iA=0;iA<toWriteAsg.length;iA+=5){
+          await Promise.all(toWriteAsg.slice(iA,iA+5).map(function(a){
+            return spEscribirAsg(a).catch(function(e){console.warn('spGuardar asg fila:',e.message);});
+          }));
+        }
         guardarLS(); // persiste _spId y _hash actualizados
       }
       // Backup diario como snapshot de seguridad adicional
