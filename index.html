@@ -422,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.27 · 2026-06-17';
+var APP_VERSION='v6.28 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -921,12 +921,24 @@ async function spBackupDiarioAsg(snapshot){
     var existente=await spLeerItem(key);
     if(existente)return; // ya hay copia de hoy, no repetir
     await spEscribirItem(key,snapshot);
-    spLimpiarBackupsAntiguosAsg().catch(function(){});
+    spLimpiarBackupsAntiguos('asg_bak_').catch(function(){});
   }catch(e){console.warn('spBackupDiarioAsg:',e.message);}
 }
-async function spLimpiarBackupsAntiguosAsg(){
+// Copia diaria de los REGISTROS consolidados (nómina) — misma red de seguridad
+// que asg. Recuperable leyendo el item reg_bak_YYYY-MM-DD en ControlHoras_Datos.
+async function spBackupDiarioReg(snapshot){
+  try{
+    var key='reg_bak_'+_hoyStr();
+    var existente=await spLeerItem(key);
+    if(existente)return; // ya hay copia de hoy, no repetir
+    await spEscribirItem(key,snapshot);
+    spLimpiarBackupsAntiguos('reg_bak_').catch(function(){});
+  }catch(e){console.warn('spBackupDiarioReg:',e.message);}
+}
+// Limpia copias con el prefijo dado (asg_bak_ / reg_bak_) de más de ~21 días.
+async function spLimpiarBackupsAntiguos(prefijo){
   var token=await _getToken();
-  var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=startswith(Title,'asg_bak_')&$select=Id,Title&$top=200",
+  var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items?$filter=startswith(Title,'"+prefijo+"')&$select=Id,Title&$top=200",
     {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
   if(!r.ok)return;
   var d=await r.json();
@@ -934,13 +946,13 @@ async function spLimpiarBackupsAntiguosAsg(){
   var digest=null;
   for(var i=0;i<(d.value||[]).length;i++){
     var it=d.value[i];
-    var fecha=new Date(it.Title.replace('asg_bak_',''));
+    var fecha=new Date(it.Title.replace(prefijo,''));
     if(!isNaN(fecha.getTime())&&fecha<limite){
       if(!digest)digest=await _spGetDigest();
       try{
         await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST+"')/items("+it.Id+")",
           {method:'POST',headers:{'Accept':'application/json;odata=nometadata','X-RequestDigest':digest,'X-HTTP-Method':'DELETE','IF-MATCH':'*','Authorization':'Bearer '+token}});
-      }catch(e){console.warn('spLimpiarBackupsAntiguosAsg item:',e.message);}
+      }catch(e){console.warn('spLimpiarBackupsAntiguos item:',e.message);}
     }
   }
 }
@@ -1360,12 +1372,16 @@ async function spCargarRegistros(){
   try{
     var token=await _getToken();
     var sel='Id,Title,Fecha,Codigo,Trabajador,Area,Unidad,Categoria,SubCategoria,ActividadId,TipoHora,HAsig,HReg,Rendimiento,Indicador,HHuellero,Entrada,Salida,Modulos,Referencia,Observaciones,Estado,FechaConsolid,FechaAprob,MotivoRechazo,AprobadoPor';
-    // Paginado: $top=5000 es el límite por página de SharePoint, NO el total.
-    // Si la lista supera los 5000 registros (~unos pocos meses de operación),
-    // sin seguir "odata.nextLink" se cortaría silenciosamente y se perderían
-    // de vista los registros más nuevos (porque se ordena por Fecha asc).
+    // VENTANA DE 90 DÍAS: la lista crece indefinidamente; bajarla completa en
+    // cada sync satura ancho de banda y el localStorage (~5 MB). Se cargan solo
+    // los últimos 90 días; la historia anterior VIVE en SharePoint (fuente de
+    // verdad) y los reportes locales cubren esa ventana.
+    var _dReg=new Date();_dReg.setDate(_dReg.getDate()-90);
+    var desdeRegStr=_fmtFechaCorta(_dReg);
+    // Paginado: $top=5000 es el límite por página de SharePoint, NO el total;
+    // se sigue "odata.nextLink" para no cortar silenciosamente.
     var spRegs=[];
-    var nextUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items?$select="+sel+"&$top=5000&$orderby=Fecha asc";
+    var nextUrl=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/items?$select="+sel+"&$filter="+encodeURIComponent("Fecha ge '"+desdeRegStr+"'")+"&$top=5000&$orderby=Fecha asc";
     var primeraPagina=true;
     while(nextUrl){
       var r=await fetch(nextUrl,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
@@ -1387,16 +1403,17 @@ async function spCargarRegistros(){
       return;
     }
     // Filtrar registros con lápida (borrados aún no confirmados) y reintentar borrarlos.
-    // spCargarRegistros trae la lista COMPLETA, así que una lápida cuya fila ya no
-    // aparece = borrado confirmado → se descarta (evita acumulación indefinida).
+    // OJO: con la ventana de 90 días "no aparece" ya NO significa "borrado confirmado"
+    // (puede estar fuera de la ventana). Para las lápidas no vistas se reintenta
+    // spEliminarReg por Title: si la fila existe la borra, y si no existe limpia
+    // la lápida — en ambos casos la lápida se resuelve sola sin acumularse.
     if(_regTomb.length){
       var rTombSet={};_regTomb.forEach(function(k){rTombSet[k]=1;});
       var rResucitar=spRegs.filter(function(x){return x.id&&rTombSet[x.id];});
       spRegs=spRegs.filter(function(x){return !(x.id&&rTombSet[x.id]);});
-      rResucitar.forEach(function(x){spEliminarReg(x).catch(function(){});}); // reintento
-      var aunEnSP={};rResucitar.forEach(function(x){aunEnSP[x.id]=1;});
-      var antes=_regTomb.length;_regTomb=_regTomb.filter(function(k){return aunEnSP[k];});
-      if(_regTomb.length!==antes)localStorage.setItem('reg_tomb',JSON.stringify(_regTomb));
+      rResucitar.forEach(function(x){spEliminarReg(x).catch(function(){});}); // reintento (vistas)
+      var vistos={};rResucitar.forEach(function(x){vistos[x.id]=1;});
+      _regTomb.filter(function(k){return !vistos[k];}).forEach(function(k){spEliminarReg({id:k}).catch(function(){});}); // no vistas: resolver por Title
     }
     // Construir índices de SP para deduplicación
     var spById={};       // id (Title) → registro SP
@@ -1406,10 +1423,14 @@ async function spCargarRegistros(){
       spByNatKey[(x.f||'')+'|'+(x.w||'')+'|'+(x.act||'')]=1;
     });
     // Registros locales a conservar:
-    // · Tienen ID y SP NO los tiene aún (escritura pendiente/fallida)
-    // · No tienen ID Y no existen en SP por clave natural (realmente nuevos, no migrados)
+    // · SIN _spId (nunca subieron): conservar SIEMPRE, sin importar la fecha —
+    //   jamás se descarta algo que no está confirmado en SharePoint.
+    // · Más viejos que la ventana Y ya en SP (_spId): salen de local — viven en SP.
+    // · Dentro de la ventana: conservar solo si SP aún no los tiene (pendientes).
     var localToKeep=reg.filter(function(x){
       if(x.id&&_regTomb.indexOf(x.id)>=0)return false; // con lápida → no reintroducir
+      if(x.id&&!x._spId)return true;                    // pendiente de subir → conservar siempre
+      if(x.f&&x.f<desdeRegStr)return false;             // viejo y confirmado en SP → liberar local
       if(x.id)return !spById[x.id];
       return !spByNatKey[(x.f||'')+'|'+(x.w||'')+'|'+(x.act||'')];
     });
@@ -1726,6 +1747,8 @@ async function spGuardar(){
       }
       guardarLS(); // persiste _spId actualizados
     }
+    // Copia diaria de registros (nómina) — snapshot de seguridad adicional
+    spBackupDiarioReg(reg).catch(function(){});
     // hue — merge completo: SP base + todas las fechas locales (no solo fechaSel)
     var itHue=await spLeerItem('hue');
     var spHue=(itHue&&itHue.Valor)?JSON.parse(itHue.Valor):{};
