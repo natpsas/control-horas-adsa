@@ -422,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.26 · 2026-06-17';
+var APP_VERSION='v6.27 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -552,6 +552,8 @@ function cargarLS(){
   s=localStorage.getItem('CARGOS_custom');if(s)CARGOS=JSON.parse(s);
   s=localStorage.getItem('aprobMasiva');if(s)aprobacionMasivaActiva=JSON.parse(s);
   s=localStorage.getItem('PERMISOS_custom');if(s){var p=JSON.parse(s);for(var k in p)if(PERMISOS[k])PERMISOS[k]=Object.assign({},PERMISOS[k],p[k]);}
+  // Saneo de datos: módulos a id canónico + migración de claves de extras
+  try{asg.forEach(_fixAsgEntry);reg.forEach(function(r){if(r.mods&&r.mods.length)r.mods=_normModsArr(r.mods);});}catch(e){console.warn('saneo cargarLS:',e.message);}
 }
 var _lsAlertaUltima=0;
 function checkLSCapacidad(){
@@ -635,6 +637,33 @@ function actualizarPendientesSP(){
     el.style.background='rgba(72,187,120,.45)';el.style.color='#fff';
     el.title='Todo lo local está confirmado en SharePoint.';
   }
+}
+// === HOMOLOGACIÓN DE MÓDULOS ===
+// Regla: en los datos SIEMPRE se guarda el id ("2","V","F-SAUCES").
+// "Módulo 2" es solo el nombre para mostrar. La mezcla histórica vino de
+// importaciones CSV que guardaban el texto sin resolver; estos helpers
+// canonizan cualquier variante y sanean los datos al cargar/sincronizar.
+function _normTxt(s){return String(s==null?'':s).toLowerCase().trim().replace(/[.\s_]/g,'').replace(/[áàâä]/g,'a').replace(/[éèêë]/g,'e').replace(/[íìîï]/g,'i').replace(/[óòôö]/g,'o').replace(/[úùûü]/g,'u').replace(/ñ/g,'n');}
+function _modCanon(tok){
+  if(tok==null)return '';
+  var t=String(tok).trim();if(!t)return '';
+  var n=_normTxt(t);
+  for(var i=0;i<MOD.length;i++){if(_normTxt(MOD[i].id)===n||_normTxt(MOD[i].nombre)===n)return MOD[i].id;}
+  var sin=_normTxt(t.replace(/m[oó]dulo/ig,'')); // "Modulo 2" -> "2"
+  if(sin){for(var j=0;j<MOD.length;j++){if(_normTxt(MOD[j].id)===sin)return MOD[j].id;}}
+  return t; // no reconocido: conservar el texto (no perder el dato)
+}
+function _normModsArr(arr){
+  var out=[],seen={};
+  (arr||[]).forEach(function(x){var id=_modCanon(x);if(id&&!seen[id]){seen[id]=1;out.push(id);}});
+  return out;
+}
+// Sanea una asignación: módulos canónicos + migra claves viejas de EXTRAS
+// (pre-v6.25 sin sufijo _E; el null en _hash fuerza re-subida que corrige el Title en SP)
+function _fixAsgEntry(a){
+  if(a.mods&&a.mods.length)a.mods=_normModsArr(a.mods);
+  if(a.x&&a._key&&a._key.slice(-2)!=='_E'){a._key=_asgKey(a);a._hash=null;}
+  return a;
 }
 // Helper: agregar una entrada a asg con los campos obligatorios v2
 function _pushAsg(entry){
@@ -971,7 +1000,7 @@ function spColsToReg(it){
     h:parseFloat(it.HAsig)||0,hr:parseFloat(it.HReg)||0,
     rend:it.Rendimiento||null,ind:it.Indicador||'',
     hhu:it.HHuellero||null,ehu:it.Entrada||null,shu:it.Salida||null,
-    mods:it.Modulos?it.Modulos.split(', ').filter(function(m){return m}):[],
+    mods:it.Modulos?_normModsArr(it.Modulos.split(',')):[],
     ref:it.Referencia||'',obs:it.Observaciones||'',
     st:it.Estado||'pendiente',
     fc:it.FechaConsolid||'',fa:it.FechaAprob||'',
@@ -1207,9 +1236,17 @@ function spColsToAsg(it){
     na:!!it.EsNA,mt:it.Motivo||'',
     estado:it.Estado||'BORRADOR',creadoPor:it.CreadoPor||''
   };
-  // Marca el hash de lo que llegó de SP: así NO se cuenta como "sin subir"
-  // ni se re-sube en cada ciclo (evita el bucle de re-escritura).
-  a._hash=_asgHash(a);
+  // Saneo: módulos a id canónico. Si la fila venía "sucia" (texto "Modulo 2"
+  // o clave vieja de extras), _hash queda null y la re-subida la corrige en SP.
+  var modsOrig=(a.mods||[]).join('|');
+  a.mods=_normModsArr(a.mods);
+  if(a.x&&a._key&&a._key.slice(-2)!=='_E'){a._key=_asgKey(a);a._hash=null;}
+  else if((a.mods||[]).join('|')!==modsOrig){a._hash=null;} // fila sucia -> reescribir limpia
+  else{
+    // Marca el hash de lo que llegó de SP: así NO se cuenta como "sin subir"
+    // ni se re-sube en cada ciclo (evita el bucle de re-escritura).
+    a._hash=_asgHash(a);
+  }
   return a;
 }
 async function _spAsgListOK(){
@@ -2362,7 +2399,7 @@ function confAddAct(){
   // Filtrar duplicadas
   var duplicadas=[];
   actIds=actIds.filter(function(actId){
-    var dup=asg.find(function(a){return a.w===cod&&a.f===fechaSel&&a.act===actId&&!a.na});
+    var dup=asg.find(function(a){return a.w===cod&&a.f===fechaSel&&a.act===actId&&!a.x&&!a.na}); // solo bloquea si ya existe la NORMAL (una extra no impide agregar la normal)
     if(dup){duplicadas.push(actId);return false}return true;
   });
   if(duplicadas.length>0&&actIds.length===0){alert('Las actividades seleccionadas ya est\u00e1n asignadas.');return}
@@ -3666,21 +3703,33 @@ function buildXLSX(regF,inaF,sufijo){
   XLSX.utils.book_append_sheet(wb,ws3,'Resumen');
   return wb;
 }
-function archivarPeriodo(){
+async function archivarPeriodo(){
   var f=filtrarParaExport();
   if(!f.reg.length&&!f.inas.length){alert('Sin datos en el rango seleccionado.');return;}
   var pendientes=f.reg.filter(function(r){return r.st==='pendiente'});
   if(pendientes.length>0&&!confirm('Hay '+pendientes.length+' registros PENDIENTES en el rango.\n¿Archivar de todas formas? Se perderán del sistema.'))return;
+  if(!confirm('Se exportará el Excel y después se eliminarán DEFINITIVAMENTE (local y SharePoint):\n· '+f.reg.length+' registro(s)\n· '+f.inas.length+' inasistencia(s)\n\n¿Continuar?'))return;
   var sufijo=(f.desde||'inicio')+' al '+(f.hasta||'hoy');
   var wb=buildXLSX(f.reg,f.inas,sufijo);
   XLSX.writeFile(wb,'archivo-'+f.desde+'-'+f.hasta+'.xlsx');
+  // Copia de emergencia antes de borrar (recuperable desde "🕘 Recuperar asignaciones")
+  if(SP_READY)await spBackupEmergenciaAsg();
+  var regDel=f.reg.slice(),asgDel=f.inas.slice(); // snapshot para borrar también en SP
   // Eliminar de memoria
   reg=reg.filter(function(r){return(f.desde&&r.f<f.desde)||(f.hasta&&r.f>f.hasta)});
   asg=asg.filter(function(a){return!(a.na&&((!f.desde||a.f>=f.desde)&&(!f.hasta||a.f<=f.hasta)))});
   // Limpiar hue del período
   if(hue){Object.keys(hue).forEach(function(fecha){if((!f.desde||fecha>=f.desde)&&(!f.hasta||fecha<=f.hasta))delete hue[fecha];});}
   guardarLS();updExpInfo();
-  toast('📦 Período archivado y eliminado de memoria','info',3500);
+  // Borrar también en SharePoint (con lápidas: si falla una petición, se reintenta
+  // y lo archivado NO resucita en el próximo sync)
+  if(SP_READY){
+    SP_GUARDANDO=true;spEstado('☁️ Borrando período en SP...');
+    try{await _spBorrarDatos(asgDel,regDel,asg,hue);spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);}
+    catch(e){alert('Archivado y borrado local OK, pero hubo un error al borrar en SP:\n'+e.message+'\nSe reintentará automáticamente (lápidas).');}
+    finally{SP_GUARDANDO=false;actualizarPendientesSP();}
+  }
+  toast('📦 Período archivado: exportado y eliminado (local y SharePoint)','info',4000);
 }
 function expCSV(){
   var f=filtrarParaExport();
@@ -3860,9 +3909,34 @@ function expMatrizHorasCSV(){
   var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='matriz-horas-'+desde+'_'+hasta+'.csv';l.click();
   toast('✅ Matriz exportada ('+data.filas.length+' trabajadores)');
 }
-function expJSON(){var data={fecha:new Date().toISOString(),asg:asg,reg:reg,hue:hue,TRB:TRB,ACT:ACT,MOD:MOD,UNI:UNI,CARGOS:CARGOS,usr:usr};var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='backup-'+fechaSel+'.json';l.click()}
+function expJSON(){
+  // Sin claves de usuario: un archivo descargado no debe exponer contraseñas.
+  var usrSafe=usr.map(function(u){var c=Object.assign({},u);delete c.clave;return c;});
+  var data={fecha:new Date().toISOString(),
+    _nota:'Backup sin claves de usuario (al restaurar se conservan las actuales). asg limitado a la ventana local (~60 días); la fuente completa es SharePoint.',
+    asg:asg,reg:reg,hue:hue,TRB:TRB,ACT:ACT,MOD:MOD,UNI:UNI,CARGOS:CARGOS,usr:usrSafe};
+  var b=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  var l=document.createElement('a');l.href=URL.createObjectURL(b);l.download='backup-'+fechaSel+'.json';l.click();
+}
 function impJSON(){document.getElementById('impFile').click()}
-function doImpJSON(ev){var f=ev.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(e){try{var d=JSON.parse(e.target.result);if(d.asg)asg=d.asg;if(d.reg)reg=d.reg;if(d.hue)hue=d.hue;if(d.usr)usr=d.usr;if(d.TRB)TRB=d.TRB;if(d.ACT)ACT=d.ACT;if(d.MOD)MOD=d.MOD;if(d.UNI)UNI=d.UNI;if(d.CARGOS)CARGOS=d.CARGOS;guardarLS();toast('✅ Importación correcta, recargando...');setTimeout(function(){location.reload()},1200)}catch(err){alert('Error: '+err.message)}};r.readAsText(f)}
+function doImpJSON(ev){var f=ev.target.files[0];if(!f)return;var r=new FileReader();r.onload=function(e){
+  try{
+    var d=JSON.parse(e.target.result);
+    var resumen='El backup contiene:\n· Asignaciones: '+(d.asg?d.asg.length:0)+'\n· Registros: '+(d.reg?d.reg.length:0)+'\n· Trabajadores: '+(d.TRB?d.TRB.length:0)+'\n· Actividades: '+(d.ACT?d.ACT.length:0)+(d.fecha?'\n· Generado: '+d.fecha:'')+'\n\n⚠️ REEMPLAZA los datos actuales de este dispositivo y luego se sincroniza a SharePoint.\n¿Continuar?';
+    if(!confirm(resumen))return;
+    var aplicar=function(){
+      if(d.asg)asg=d.asg;if(d.reg)reg=d.reg;if(d.hue)hue=d.hue;
+      // usr: si el backup viene sin claves (expJSON ya no las incluye), conservar las actuales
+      if(d.usr){d.usr.forEach(function(u){if(!u.clave){var prev=usr.find(function(x){return x.usr===u.usr});if(prev&&prev.clave)u.clave=prev.clave;}});usr=d.usr;}
+      if(d.TRB)TRB=d.TRB;if(d.ACT)ACT=d.ACT;if(d.MOD)MOD=d.MOD;if(d.UNI)UNI=d.UNI;if(d.CARGOS)CARGOS=d.CARGOS;
+      // Limpiar lápidas: lo restaurado expresa intención explícita — no debe re-borrarse
+      _asgTomb=[];_regTomb=[];localStorage.setItem('asg_tomb','[]');localStorage.setItem('reg_tomb','[]');
+      guardarLS();toast('✅ Importación correcta, recargando...');setTimeout(function(){location.reload()},1200);
+    };
+    // Copia de emergencia de lo ACTUAL antes de reemplazar (recuperable desde "🕘 Recuperar asignaciones")
+    if(SP_READY)spBackupEmergenciaAsg().catch(function(){}).then(aplicar);else aplicar();
+  }catch(err){alert('Error: '+err.message)}
+};r.readAsText(f)}
 // === EXPORTAR/IMPORTAR CSV INTELIGENTE ===
 function expTrbCSV(){
   var csv='codigo,nombre,area,supervisor,actividad_base,horas_base,mods_base,activo\n';
@@ -4528,8 +4602,7 @@ function procesarImportAsg(rows){
     if(a.codigo)actByCod[a.codigo.toUpperCase()]=a;
   });
   var trbByCode={};TRB.forEach(function(t){trbByCode[t.codigo]=t;});
-  // Índice de módulos tolerante a acentos/espacios: "Modulo 2" == "Módulo 2" == id "2"
-  var modByNombre={};MOD.filter(function(m){return m.activo}).forEach(function(m){modByNombre[normH(m.nombre)]=m.id;modByNombre[normH(m.id)]=m.id;});
+  // Módulos: se resuelven con el canonizador global _modCanon (una sola nomenclatura: el id)
   var nuevas=[],errores=[];
   for(var i=1;i<rows.length;i++){
     var row=rows[i];
@@ -4559,15 +4632,7 @@ function procesarImportAsg(rows){
     }
     if(!act){errores.push('Fila '+(i+1)+': actividad "'+subRaw+'" no encontrada (usa código corto, ID numérico o nombre)');continue;}
     // Resolver módulos
-    var mods=[];
-    if(modsRaw){
-      modsRaw.split(/,|;/).forEach(function(m){
-        var mt=m.trim();if(!mt)return;
-        var mid=modByNombre[normH(mt)];              // "Modulo 2" -> id "2" (ignora tildes/espacios)
-        if(!mid)mid=modByNombre[normH(mt.replace(/m[oó]dulo/i,''))]; // "Modulo 2" -> "2" por si acaso
-        mods.push(mid||mt); // si no existe ese módulo, conserva el texto (no se pierde)
-      });
-    }
+    var mods=modsRaw?_normModsArr(modsRaw.split(/,|;/)):[];
     nuevas.push({fecha:fecha,trb:trb,act:act,h:hRaw||8,x:x,mods:mods,obs:obsRaw,ref:refRaw2});
   }
   if(!nuevas.length){
@@ -5197,7 +5262,7 @@ function restaurarAsgVersion(verIdx,fechas){
   var agregados=0,yaExistian=0;
   v.arr.forEach(function(a){
     if(fechas.indexOf(a.f)<0)return;
-    var existe=asg.some(function(x){return x.f===a.f&&x.w===a.w&&String(x.act)===String(a.act)&&!!x.na===!!a.na;});
+    var existe=asg.some(function(x){return x.f===a.f&&x.w===a.w&&String(x.act)===String(a.act)&&!!x.x===!!a.x&&!!x.na===!!a.na;});
     if(existe){yaExistian++;return;}
     var copia=JSON.parse(JSON.stringify(a));
     delete copia._spId;delete copia._hash; // re-resolver por Title al re-sincronizar
