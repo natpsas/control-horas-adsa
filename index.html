@@ -422,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.28 · 2026-06-17';
+var APP_VERSION='v6.30 · 2026-06-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -664,6 +664,21 @@ function _fixAsgEntry(a){
   if(a.mods&&a.mods.length)a.mods=_normModsArr(a.mods);
   if(a.x&&a._key&&a._key.slice(-2)!=='_E'){a._key=_asgKey(a);a._hash=null;}
   return a;
+}
+// Fecha desde una celda importada → "YYYY-MM-DD". Acepta: texto ISO,
+// dd/mm/aaaa, o número de serie de Excel (SheetJS convierte textos tipo fecha
+// a seriales, a veces con fracción por zona horaria, ej. 46205.7914 = 2026-07-03).
+// El redondeo a DÍAS + getters UTC neutraliza el corrimiento horario.
+function _fechaDesdeCelda(v){
+  var s=String(v==null?'':v).trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
+  if(/^\d{1,2}[\/\-]\d{1,2}[\/\-]\d{4}/.test(s)){var p=s.split(/[\s\/\-]/);return p[2]+'-'+String(p[1]).padStart(2,'0')+'-'+String(p[0]).padStart(2,'0');}
+  var n=parseFloat(s);
+  if(!isNaN(n)&&n>20000&&n<80000){
+    var d=new Date(Math.round(n-25569)*86400000);
+    return d.getUTCFullYear()+'-'+String(d.getUTCMonth()+1).padStart(2,'0')+'-'+String(d.getUTCDate()).padStart(2,'0');
+  }
+  return s;
 }
 // Helper: agregar una entrada a asg con los campos obligatorios v2
 function _pushAsg(entry){
@@ -2258,7 +2273,7 @@ function renderT1(){
       ex.forEach(function(a,i){
         var act=ACT.find(function(x){return x.id===a.act});var desc=act?actDesc(act):'Act '+a.act;
         var uniAct=a.uni||'';var modsUni=MOD.filter(function(m){return m.activo&&m.unidad===uniAct});var selM=a.mods||[];
-        h+='<div class="ar"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><div style="flex:1"><b style="font-size:11px">'+desc+'</b></div><button class="btn btn-d btn-sm" onclick="delAct(\''+t.codigo+'\','+i+')">X</button></div>';
+        h+='<div class="ar"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><div style="flex:1"><b style="font-size:11px">'+desc+'</b></div><button class="btn btn-i btn-sm" style="margin-right:4px" title="Cambiar actividad" onclick="modalCambiarActividad(\'asg\',\''+t.codigo+'\','+i+')">✏️</button><button class="btn btn-d btn-sm" onclick="delAct(\''+t.codigo+'\','+i+')">X</button></div>';
         h+='<div class="fr"><div class="fg"><label>Horas</label><input type="number" id="h_'+t.codigo+'_'+i+'" value="'+(a.h||0)+'" min="0" max="16" step="0.5" onchange="updH(\''+t.codigo+'\','+i+',this.value)"></div>';
         h+='<div class="fg" style="display:flex;align-items:center;padding-top:22px"><label style="display:flex;align-items:center;gap:6px;margin:0;cursor:pointer"><input type="checkbox" id="x_'+t.codigo+'_'+i+'" style="width:16px;height:16px" '+(a.x?'checked':'')+' onchange="updX(\''+t.codigo+'\','+i+',this.checked)"> Extras</label></div></div>';
         if(act&&act.usa_modulo&&modsUni.length>0){var autoSel=modsUni.length===1;
@@ -2466,6 +2481,96 @@ function updObsRef(cod){
   var obs=obsEl?obsEl.value:'';var ref=refEl?refEl.value.trim():'';
   asg.filter(function(a){return a.w===cod&&a.f===fechaSel&&!a.na}).forEach(function(a){a.obs=obs;a.ref=ref;});
   guardarLS();
+}
+// === CAMBIAR ACTIVIDAD (Asignación / Consolidación / Aprobación) ===
+// Un solo modal para las 3 secciones. En asg la clave SP incluye la actividad,
+// por lo que el cambio borra la fila vieja (con lápida) y re-crea la nueva;
+// en reg el Title no cambia y es una edición simple (solo pendientes).
+var _ceCtx=null;
+function modalCambiarActividad(tipo,p1,p2){
+  var actual='',titulo='';
+  if(tipo==='reg'){
+    var r=reg[p1];if(!r)return;
+    if(r.st!=='pendiente'){alert('Solo se puede cambiar la actividad de registros PENDIENTES.');return;}
+    actual=String(r.act||'');titulo=(r.n||r.w)+' · '+r.f+' · '+(r.tp||'NORMAL');
+    _ceCtx={tipo:'reg',ri:p1,mods:(r.mods||[]).slice()};
+  }else{
+    guardarModsEnMem();guardarModsConsol();
+    var ex=asg.filter(function(a){return a.w===p1&&a.f===fechaSel&&!a.na});
+    var a=ex[p2];if(!a)return;
+    var t=TRB.find(function(x){return x.codigo===p1});
+    actual=String(a.act||'');titulo=(t?t.nombre:p1)+' · '+fechaSel+(a.x?' · EXTRA':'');
+    _ceCtx={tipo:'asg',cod:p1,idx:p2,mods:(a.mods||[]).slice()};
+  }
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:560px;width:96%">';
+  mh+='<h2>🔁 Cambiar actividad</h2>';
+  mh+='<p style="font-size:12px;color:#718096;margin-bottom:8px">'+titulo+'</p>';
+  mh+='<input type="text" id="ceBusq" placeholder="🔍 Buscar actividad..." oninput="ceBuscarAct()" style="margin-bottom:4px">';
+  mh+='<select id="ceAct" size="9" onchange="ceCambioAct()" style="font-size:12px;width:100%;border:2px solid #e2e8f0;border-radius:6px;padding:4px">';
+  var lastUni='';
+  ACT.filter(function(x){return x.activo}).forEach(function(x){
+    if(x.unidad!==lastUni){mh+='<optgroup label="'+x.unidad+'">';lastUni=x.unidad;}
+    mh+='<option value="'+x.id+'"'+(String(x.id)===actual?' selected':'')+'>'+(x.codigo?'['+x.codigo+'] ':'')+x.subcategoria+'</option>';
+  });
+  mh+='</select>';
+  mh+='<div class="fg" style="margin-top:8px"><label>📦 Módulos</label><div class="modbox" id="ceMods" style="background:#fff"></div></div>';
+  mh+='<div style="display:flex;gap:6px;margin-top:12px"><button class="btn btn-s" onclick="doCambiarActividad()">Guardar cambio</button><button class="btn btn-d" onclick="cerrarModal()">Cancelar</button></div>';
+  mh+='</div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+  ceCambioAct();
+}
+function ceBuscarAct(){
+  var q=(document.getElementById('ceBusq').value||'').toLowerCase();
+  var sel=document.getElementById('ceAct');var prev=sel.value;
+  sel.innerHTML='';var lastUni='';
+  ACT.filter(function(x){return x.activo}).forEach(function(x){
+    var m=!q||(x.subcategoria&&x.subcategoria.toLowerCase().indexOf(q)>=0)||(x.categoria&&x.categoria.toLowerCase().indexOf(q)>=0)||(x.unidad&&x.unidad.toLowerCase().indexOf(q)>=0)||(x.codigo&&x.codigo.toLowerCase().indexOf(q)>=0);
+    if(!m)return;
+    if(x.unidad!==lastUni){sel.innerHTML+='<optgroup label="'+x.unidad+'">';lastUni=x.unidad;}
+    sel.innerHTML+='<option value="'+x.id+'"'+(x.id==prev?' selected':'')+'>'+(x.codigo?'['+x.codigo+'] ':'')+x.subcategoria+'</option>';
+  });
+  ceCambioAct();
+}
+function ceCambioAct(){
+  var actId=document.getElementById('ceAct')?document.getElementById('ceAct').value:'';
+  var act=ACT.find(function(x){return x.id===actId});
+  var box=document.getElementById('ceMods');if(!box)return;
+  if(!act){box.innerHTML='<p style="font-size:11px;color:#a0aec0">Selecciona una actividad</p>';return;}
+  if(!act.usa_modulo){box.innerHTML='<p style="font-size:11px;color:#718096">Esta actividad no usa módulos</p>';return;}
+  var mods=MOD.filter(function(m){return m.activo&&m.unidad===act.unidad});
+  if(!mods.length){box.innerHTML='<p style="font-size:11px;color:#a0aec0">Sin módulos para esta unidad</p>';return;}
+  var pre=(_ceCtx&&_ceCtx.mods)||[];
+  var html='';mods.forEach(function(m){
+    var chk=pre.indexOf(m.id)>=0||mods.length===1; // conserva los actuales si aplican; auto si es único
+    html+='<div class="cbi"><input type="checkbox" value="'+m.id+'"'+(chk?' checked':'')+'><label>'+m.nombre+'</label></div>';
+  });
+  box.innerHTML=html;
+}
+function doCambiarActividad(){
+  if(!_ceCtx)return;
+  var actId=document.getElementById('ceAct').value;
+  var nueva=ACT.find(function(x){return x.id===actId});
+  if(!nueva){alert('Selecciona una actividad.');return;}
+  var mods=[].slice.call(document.querySelectorAll('#ceMods input:checked')).map(function(c){return c.value});
+  if(nueva.usa_modulo&&mods.length===0){alert('Esta actividad requiere al menos un módulo.');return;}
+  if(_ceCtx.tipo==='reg'){
+    var r=reg[_ceCtx.ri];if(!r)return;
+    if(reg.some(function(x){return x!==r&&x.f===r.f&&x.w===r.w&&String(x.act)===String(nueva.id)&&x.tp===r.tp;})){alert('Ya existe un registro de esa actividad para ese trabajador/día/tipo.');return;}
+    r.act=nueva.id;r.sub=nueva.subcategoria||'';r.cat=nueva.categoria||'';r.uni=nueva.unidad||'';r.ind=nueva.indicador||'';r.mods=mods;r.rend=null;
+    _ceCtx=null;guardarLS();cerrarModal();renderT3();toast('✅ Actividad cambiada');
+    if(SP_READY)spEscribirReg(r).catch(function(){});
+  }else{
+    var ex=asg.filter(function(a){return a.w===_ceCtx.cod&&a.f===fechaSel&&!a.na});
+    var a=ex[_ceCtx.idx];if(!a)return;
+    if(asg.some(function(x){return x!==a&&x.f===a.f&&x.w===a.w&&String(x.act)===String(nueva.id)&&!!x.x===!!a.x&&!x.na;})){alert('Ese trabajador ya tiene esa actividad ese día (mismo tipo).');return;}
+    // La clave en SP incluye la actividad → borrar la fila vieja (lápida) y re-crear con la nueva
+    var oldRef={_key:a._key||_asgKey(a),_spId:a._spId};
+    a.act=nueva.id;a.uni=nueva.unidad||'';a.mods=mods;a.rend=null;
+    delete a._spId;delete a._hash;a._key=_asgKey(a);
+    _asgTombClear(a._key);
+    if(SP_READY&&oldRef._key!==a._key)_spAsgListOK().then(function(ok){if(ok)spBorrarAsg(oldRef).catch(function(){});});
+    _ceCtx=null;guardarLS();cerrarModal();stats();renderT1();renderT2();toast('✅ Actividad cambiada');
+  }
 }
 function toggleNA(cod){guardarModsEnMem();var ch=document.getElementById('na_'+cod);var nd=document.getElementById('naD_'+cod);var af=document.getElementById('af_'+cod);
   if(ch.checked){
@@ -2699,11 +2804,9 @@ function procesarImportConsolidado(rows){
   var nuevos=[],errores=[];
   for(var i=1;i<rows.length;i++){
     var row=rows[i];
-    var fecha=String(row[cFecha]||'').trim();
+    var fecha=_fechaDesdeCelda(row[cFecha]); // texto ISO, dd/mm/aaaa o serial Excel (con fracción TZ)
     var cod=String(row[cCod]||'').trim();
     if(!fecha||!cod)continue;
-    // Convertir fecha numérica Excel
-    if(!isNaN(fecha)&&fecha.length<8){var d2=new Date(Math.round((parseFloat(fecha)-25569)*86400*1000));fecha=d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0')+'-'+String(d2.getDate()).padStart(2,'0');}
     if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){errores.push('Fila '+(i+1)+': fecha inválida "'+fecha+'"');continue;}
     var trb=trbByCode[cod];
     if(!trb){errores.push('Fila '+(i+1)+': código "'+cod+'" no encontrado');continue;}
@@ -2897,7 +3000,7 @@ function renderT2(){
     // Actividades con módulos visibles
     acts.forEach(function(a,i){var act=ACT.find(function(x){return x.id===a.act});var tieneR=act&&act.indicador;
       h+='<div class="ar"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:2px"><b style="font-size:11px">'+(act?actDesc(act):'')+'</b>';
-      h+='<button class="btn btn-d btn-sm" style="font-size:10px;padding:2px 7px;margin-left:8px" onclick="delActConsol(\''+cod+'\','+i+')">✕</button></div>';
+      h+='<span style="margin-left:8px;white-space:nowrap"><button class="btn btn-i btn-sm" style="font-size:10px;padding:2px 7px" title="Cambiar actividad" onclick="modalCambiarActividad(\'asg\',\''+cod+'\','+i+')">✏️</button><button class="btn btn-d btn-sm" style="font-size:10px;padding:2px 7px;margin-left:4px" onclick="delActConsol(\''+cod+'\','+i+')">✕</button></span></div>';
       var uniA=a.uni||'';var modsA=MOD.filter(function(m){return m.activo&&m.unidad===uniA});var selMA=a.mods||[];
       if(act&&act.usa_modulo&&modsA.length>0){
         h+='<div class="fg" style="margin-top:5px"><label>M\u00f3dulos <button class="btn btn-sm" style="background:#edf2f7;font-size:10px;padding:2px 6px" onclick="selAllModC(\''+cod+'_'+i+'\')">Todos</button></label><div class="modbox" id="mc_'+cod+'_'+i+'">';
@@ -3118,7 +3221,7 @@ function renderT3(){
       html+='</div></div>';
       html+='<div class="fg"><label>Referencia</label><input type="text" id="eref_'+ri+'" value="'+(r.ref||'')+'" placeholder="Opcional"></div>';
       html+='<div class="fg"><label>Obs.</label><input type="text" id="eo_'+ri+'" value="'+(r.obs||'')+'"></div>';
-      html+='</div><div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-s btn-sm" onclick="guardarEdicion('+ri+')">Guardar</button><button class="btn btn-sm" style="background:#edf2f7" onclick="cancelarEdicion('+ri+')">Cancelar</button></div></td></tr>';
+      html+='</div><div style="margin-top:8px;display:flex;gap:6px"><button class="btn btn-s btn-sm" onclick="guardarEdicion('+ri+')">Guardar</button><button class="btn btn-i btn-sm" title="Cambiar la actividad de este registro" onclick="modalCambiarActividad(\'reg\','+ri+')">🔁 Cambiar actividad</button><button class="btn btn-sm" style="background:#edf2f7" onclick="cancelarEdicion('+ri+')">Cancelar</button></div></td></tr>';
     }
   });
   tb.innerHTML=html;
@@ -3237,7 +3340,7 @@ function procesarImportReg(rows){
   var nuevos=[],errores=[];
   for(var i=1;i<rows.length;i++){
     var row=rows[i];
-    var fecha=String(row[cFecha]||'').trim();
+    var fecha=_fechaDesdeCelda(row[cFecha]); // texto ISO, dd/mm/aaaa o serial Excel
     var cod=String(row[cCod]||'').trim();
     var subRaw=cSub>=0?String(row[cSub]||'').trim():'';
     var tipo=cTipo>=0?String(row[cTipo]||'NORMAL').trim().toUpperCase():'NORMAL';
@@ -4642,11 +4745,8 @@ function procesarImportAsg(rows){
     if(!fecha||!cod)continue;
     var trb=trbByCode[cod];
     if(!trb){errores.push('Fila '+(i+1)+': código "'+cod+'" no encontrado');continue;}
-    if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){
-      // Intentar convertir número Excel a fecha
-      if(!isNaN(fecha)){var d2=new Date(Math.round((parseFloat(fecha)-25569)*86400*1000));fecha=d2.getFullYear()+'-'+String(d2.getMonth()+1).padStart(2,'0')+'-'+String(d2.getDate()).padStart(2,'0');}
-      else{errores.push('Fila '+(i+1)+': fecha inválida "'+fecha+'"');continue;}
-    }
+    fecha=_fechaDesdeCelda(fecha); // texto ISO, dd/mm/aaaa o serial Excel (con fracción TZ)
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(fecha)){errores.push('Fila '+(i+1)+': fecha inválida "'+fecha+'"');continue;}
     // Buscar actividad: por código corto → por ID → por nombre exacto → por nombre parcial
     var act=actByCod[subRaw.toUpperCase()]||actById[actIdRaw]||actByCod[actIdRaw.toUpperCase()]||actByName[subRaw.toLowerCase()];
     if(!act&&subRaw){
