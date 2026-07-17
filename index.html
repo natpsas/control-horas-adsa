@@ -422,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.31 · 2026-07-17';
+var APP_VERSION='v6.32 · 2026-07-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -2839,7 +2839,8 @@ function procesarImportConsolidado(rows){
     var act=actByCod[subRaw.toUpperCase()]||actById[subRaw]||actByName[subRaw.toLowerCase()];
     if(!act&&subRaw){var subL=subRaw.toLowerCase();Object.keys(actByName).forEach(function(k){if(!act&&(k.indexOf(subL)>=0||subL.indexOf(k)>=0))act=actByName[k];});}
     // Módulos
-    var mods=modsRaw?modsRaw.split(/,|;/).map(function(m){var mt=m.trim();return modByKey[mt.toLowerCase()]||mt;}).filter(Boolean):[];
+    var mods=modsRaw?_normModsArr(modsRaw.split(/,|;/)):[];
+    mods=_autoModUnico(act,mods); // módulo único de la unidad → se marca solo
     nuevos.push({
       id:genRegId(),f:fecha,w:trb.codigo,n:trb.nombre,ar:trb.area,
       act:act?act.id:'',uni:act?act.unidad||'':uniRaw,
@@ -3377,8 +3378,9 @@ function procesarImportReg(rows){
       for(var ki=0;ki<keys.length;ki++){if(keys[ki].indexOf(subL)>=0||subL.indexOf(keys[ki])>=0){act=actByName[keys[ki]];break;}}
     }
     if(!act){errores.push('Fila '+(i+1)+': actividad "'+subRaw+'" no encontrada');continue;}
-    // Módulos
-    var mods=modsRaw?modsRaw.split(/,|;/).map(function(m){return m.trim();}).filter(Boolean):[];
+    // Módulos (canonizados a id; si la unidad tiene un solo módulo, se marca solo)
+    var mods=modsRaw?_normModsArr(modsRaw.split(/,|;/)):[];
+    mods=_autoModUnico(act,mods);
     // Tipo
     if(tipo!=='NORMAL'&&tipo!=='EXTRAS')tipo='NORMAL';
     nuevos.push({
@@ -4766,6 +4768,7 @@ function procesarImportAsg(rows){
     if(!act){errores.push('Fila '+(i+1)+': actividad "'+subRaw+'" no encontrada (usa código corto, ID numérico o nombre)');continue;}
     // Resolver módulos
     var mods=modsRaw?_normModsArr(modsRaw.split(/,|;/)):[];
+    mods=_autoModUnico(act,mods); // módulo único de la unidad → se marca solo
     nuevas.push({fecha:fecha,trb:trb,act:act,h:hRaw||8,x:x,mods:mods,obs:obsRaw,ref:refRaw2});
   }
   if(!nuevas.length){
