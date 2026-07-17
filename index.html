@@ -286,6 +286,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
         <option value="rechazado">Rechazados</option>
       </select>
       <button class="btn btn-i btn-sm" onclick="modalMatrizHoras()" style="font-size:11px" title="Matriz de horas por día: una columna por día, filas por trabajador, normales y extras">📅 Matriz horas/día</button>
+      <button class="btn btn-sm" onclick="modalPlanillaDigital()" style="font-size:11px;background:#2d5a3d;color:#fff;border:none" title="Vista tipo planilla física: hoja por hoja, con trabajador, actividad, detalle escrito, módulos y horas">🧾 Planilla digital</button>
     </div>
   </div>
   <div id="t4Sum"></div>
@@ -422,7 +423,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.32 · 2026-07-17';
+var APP_VERSION='v6.33 · 2026-07-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -3941,6 +3942,83 @@ function expNominaCSV(fmt){
   var l=document.createElement('a');l.href=URL.createObjectURL(b);
   l.download='nomina-'+(f.desde||'todo')+(f.hasta&&f.hasta!==f.desde?'_'+f.hasta:'')+(esES?'-coma':'-punto')+'.csv';l.click();
   toast('\u2705 CSV de n\u00f3mina ('+(esES?'coma decimal':'punto decimal')+') \u2014 '+aprob.length+' filas aprobadas');
+}
+// === PLANILLA DIGITAL (réplica de la planilla física, agrupada por hoja) ===
+// Fuente: registros consolidados (reg). "Hoja" = campo Referencia (28.01, SAUCES-A...).
+function modalPlanillaDigital(){
+  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:1100px;width:98%;max-height:95vh;overflow:auto">';
+  mh+='<h2>🧾 Planilla digital</h2>';
+  mh+='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">';
+  mh+='<div class="fg" style="margin:0"><label>📅 Fecha</label><input type="date" id="pdFecha" value="'+fechaSel+'" onchange="pdCargarHojas()"></div>';
+  mh+='<div class="fg" style="margin:0;min-width:170px"><label>Hoja</label><select id="pdHoja" onchange="renderPlanillaDigital()"><option value="">(todas las hojas)</option></select></div>';
+  mh+='<button class="btn btn-i" onclick="impPlanillaDigital()">🖨 Imprimir</button>';
+  mh+='<button class="btn btn-d" style="margin-left:auto" onclick="cerrarModal()">Cerrar</button>';
+  mh+='</div><div id="pdBody"></div></div></div>';
+  document.getElementById('modalContainer').innerHTML=mh;
+  pdCargarHojas();
+}
+function pdCargarHojas(){
+  var f=document.getElementById('pdFecha').value;
+  var sel=document.getElementById('pdHoja');if(!sel)return;
+  var hojas=[];reg.forEach(function(r){if(r.f===f){var h=(r.ref||'(sin hoja)');if(hojas.indexOf(h)<0)hojas.push(h);}});
+  hojas.sort();
+  sel.innerHTML='<option value="">(todas las hojas)</option>';
+  hojas.forEach(function(h){sel.innerHTML+='<option value="'+_esc(h)+'">'+_esc(h)+'</option>';});
+  renderPlanillaDigital();
+}
+function _pdHTML(f,hojaFlt,paraImpresion){
+  var rows=reg.filter(function(r){return r.f===f&&(!hojaFlt||(r.ref||'(sin hoja)')===hojaFlt);});
+  if(!rows.length)return '<p style="color:#a0aec0;padding:10px">Sin registros consolidados para esa fecha'+(hojaFlt?' y hoja':'')+'.</p>';
+  var porHoja={};rows.forEach(function(r){var h=(r.ref||'(sin hoja)');(porHoja[h]=porHoja[h]||[]).push(r);});
+  var dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
+  var diaN=dias[new Date(f+'T12:00:00').getDay()];
+  var html='';
+  Object.keys(porHoja).sort().forEach(function(hoja){
+    var lista=porHoja[hoja].slice().sort(function(a,b){return (a.n||'').localeCompare(b.n||'');});
+    var tot=0,totE=0,ws={};lista.forEach(function(r){if(r.tp==='EXTRAS')totE+=r.hr||0;else tot+=r.hr||0;ws[r.w]=1;});
+    html+='<div style="margin:12px 0 4px;font-size:15px;font-weight:700;color:#2d5a3d">Hoja '+_esc(hoja)+' — '+diaN+' '+f+'</div>';
+    html+='<div style="margin:4px 0 8px;padding:7px 12px;background:#e8f0ea;border-left:4px solid #2d5a3d;font-size:13px">'+Object.keys(ws).length+' trabajador(es) · '+tot.toFixed(1)+'h normales'+(totE?' · <b style="color:#92400e">'+totE.toFixed(1)+'h extras</b>':'')+'</div>';
+    html+='<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;background:#fff;font-size:13px">';
+    html+='<thead><tr>';
+    ['#','Trabajador','Código','Actividad','Detalle escrito','Módulos','Tipo','Horas','Estado'].forEach(function(c){html+='<th style="border:1px solid #ccc;padding:5px 7px;text-align:left;background:#2d5a3d;color:#fff">'+c+'</th>';});
+    html+='</tr></thead><tbody>';
+    lista.forEach(function(r,i){
+      var bg=i%2?'background:#f2f7f3;':'';
+      var revisar=(r.obs||'').indexOf('[')>=0||!(r.mods&&r.mods.length);
+      if(revisar)bg='background:#fff3cd;';
+      html+='<tr style="'+bg+'">';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px;text-align:center;color:#718096">'+(i+1)+'</td>';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-weight:600">'+_esc(r.n||'')+'</td>';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:11px;color:#718096">'+_esc(r.w||'')+'</td>';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px">'+_esc(r.sub||'')+'</td>';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:12px;color:#4a5568;font-style:italic">'+_esc(r.obs||'')+'</td>';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:12px">'+_esc((r.mods||[]).join(', '))+'</td>';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:11px;'+(r.tp==='EXTRAS'?'color:#92400e;font-weight:700':'color:#276749')+'">'+(r.tp==='EXTRAS'?'EXTRA':'Normal')+'</td>';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px;text-align:center;font-weight:700">'+((r.hr||0).toFixed(1))+'</td>';
+      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:11px">'+_esc(r.st||'')+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table></div>';
+  });
+  if(!paraImpresion)html+='<p style="font-size:11px;color:#a0aec0;margin-top:8px">Amarillo = fila con marca [REVISAR] o sin módulos.</p>';
+  return html;
+}
+function renderPlanillaDigital(){
+  var f=document.getElementById('pdFecha').value;
+  var hoja=document.getElementById('pdHoja')?document.getElementById('pdHoja').value:'';
+  var body=document.getElementById('pdBody');if(!body)return;
+  body.innerHTML=_pdHTML(f,hoja,false);
+}
+function impPlanillaDigital(){
+  var f=document.getElementById('pdFecha').value;
+  var hoja=document.getElementById('pdHoja')?document.getElementById('pdHoja').value:'';
+  var win=window.open('','_blank');
+  win.document.write('<html><head><meta charset="utf-8"><title>Planilla digital '+f+'</title></head>');
+  win.document.write('<body style="font-family:Segoe UI,Arial,sans-serif;margin:16px;color:#222">');
+  win.document.write('<h1 style="font-size:18px">🫐 Arándanos de San Antonio — Planilla digital '+f+(hoja?' · Hoja '+hoja:'')+'</h1>');
+  win.document.write(_pdHTML(f,hoja,true));
+  win.document.write('</body></html>');
+  win.document.close();win.focus();win.print();
 }
 // === MATRIZ DE HORAS POR DÍA (pivot: trabajador × día) ===
 function _matrizData(desde,hasta){
