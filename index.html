@@ -173,6 +173,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button class="tab-btn" onclick="swTab('t2',this)">⏰ Consolidación</button>
 <button class="tab-btn" onclick="swTab('t3',this)">✅ Aprobación</button>
 <button id="tabReportes" class="tab-btn" onclick="swTab('t4',this)" style="display:none">📊 Reportes</button>
+<button id="tabPlanilla" class="tab-btn" onclick="swTab('t6',this)" style="display:none">🧾 Planilla</button>
 <button class="tab-btn" onclick="swTab('t5',this)">⚙️ Gestión</button>
 </div>
 
@@ -286,7 +287,6 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
         <option value="rechazado">Rechazados</option>
       </select>
       <button class="btn btn-i btn-sm" onclick="modalMatrizHoras()" style="font-size:11px" title="Matriz de horas por día: una columna por día, filas por trabajador, normales y extras">📅 Matriz horas/día</button>
-      <button class="btn btn-sm" onclick="modalPlanillaDigital()" style="font-size:11px;background:#2d5a3d;color:#fff;border:none" title="Vista tipo planilla física: hoja por hoja, con trabajador, actividad, detalle escrito, módulos y horas">🧾 Planilla digital</button>
     </div>
   </div>
   <div id="t4Sum"></div>
@@ -333,6 +333,18 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
   </div>
   <input type="file" id="impFile" accept=".json" style="display:none" onchange="doImpJSON(event)">
 </div>
+</div>
+</div>
+
+<div id="t6" class="tc">
+<div class="alert al-i"><b>Planilla digital</b> — Réplica de la planilla física, hoja por hoja, desde los registros consolidados.</div>
+<div class="card">
+  <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
+    <div class="fg" style="margin:0"><label>📅 Fecha</label><input type="date" id="pdFecha" onchange="pdCargarHojas()"></div>
+    <div class="fg" style="margin:0;min-width:180px"><label>Hoja</label><select id="pdHoja" onchange="renderPlanillaDigital()"><option value="">(todas las hojas)</option></select></div>
+    <button class="btn btn-i" onclick="impPlanillaDigital()">🖨 Imprimir</button>
+  </div>
+  <div id="pdBody"></div>
 </div>
 </div>
 
@@ -423,7 +435,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.33 · 2026-07-17';
+var APP_VERSION='v6.34 · 2026-07-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -473,6 +485,8 @@ function mostrarApp(){
   // Pesta\u00F1a Reportes solo para Admin
   var tabR=document.getElementById('tabReportes');
   if(tabR)tabR.style.display=(esAdmin()||getRolUsuario()==='supervisor')?'':'none';
+  var tabPl=document.getElementById('tabPlanilla');
+  if(tabPl)tabPl.style.display=(esAdmin()||getRolUsuario()==='supervisor')?'':'none';
   // Checkbox aprobaci\u00F3n masiva solo para Admin
   var lblAM=document.getElementById('lblAprobMasiva');
   if(lblAM)lblAM.style.display=tienePermiso('aprobacion_masiva')?'flex':'none';
@@ -1860,6 +1874,7 @@ function cambiarFecha(){
     if(id==='t2')renderT2();
     if(id==='t3')renderT3();
     if(id==='t4')renderT4();
+    if(id==='t6'){var pf=document.getElementById('pdFecha');if(pf)pf.value=fechaSel;pdCargarHojas();}
   }else{renderT1()}
 }
 function stats(){
@@ -2064,7 +2079,7 @@ function swTab(id,btn){
   document.querySelectorAll('.tc').forEach(function(t){t.classList.remove('active')});
   document.querySelectorAll('.tab-btn').forEach(function(b){b.classList.remove('active')});
   document.getElementById(id).classList.add('active');btn.classList.add('active');
-  if(id==='t2')renderT2();if(id==='t3')renderT3();if(id==='t4'){swSubT4('consol');}if(id==='t5')renderGestion();
+  if(id==='t2')renderT2();if(id==='t3')renderT3();if(id==='t4'){swSubT4('consol');}if(id==='t5')renderGestion();if(id==='t6')pdInitTab();
 }
 function poblarFiltros(){
   var areas=[],unis=[];
@@ -3943,18 +3958,11 @@ function expNominaCSV(fmt){
   l.download='nomina-'+(f.desde||'todo')+(f.hasta&&f.hasta!==f.desde?'_'+f.hasta:'')+(esES?'-coma':'-punto')+'.csv';l.click();
   toast('\u2705 CSV de n\u00f3mina ('+(esES?'coma decimal':'punto decimal')+') \u2014 '+aprob.length+' filas aprobadas');
 }
-// === PLANILLA DIGITAL (réplica de la planilla física, agrupada por hoja) ===
-// Fuente: registros consolidados (reg). "Hoja" = campo Referencia (28.01, SAUCES-A...).
-function modalPlanillaDigital(){
-  var mh='<div class="modal-bg" onmousedown="window._mdModal=event.target" onclick="if(event.target===this&&window._mdModal===this)cerrarModal()"><div class="modal" style="max-width:1100px;width:98%;max-height:95vh;overflow:auto">';
-  mh+='<h2>🧾 Planilla digital</h2>';
-  mh+='<div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">';
-  mh+='<div class="fg" style="margin:0"><label>📅 Fecha</label><input type="date" id="pdFecha" value="'+fechaSel+'" onchange="pdCargarHojas()"></div>';
-  mh+='<div class="fg" style="margin:0;min-width:170px"><label>Hoja</label><select id="pdHoja" onchange="renderPlanillaDigital()"><option value="">(todas las hojas)</option></select></div>';
-  mh+='<button class="btn btn-i" onclick="impPlanillaDigital()">🖨 Imprimir</button>';
-  mh+='<button class="btn btn-d" style="margin-left:auto" onclick="cerrarModal()">Cerrar</button>';
-  mh+='</div><div id="pdBody"></div></div></div>';
-  document.getElementById('modalContainer').innerHTML=mh;
+// === PLANILLA DIGITAL (pestaña 🧾 · réplica de la planilla física, agrupada por hoja) ===
+// Fuente: registros consolidados (reg). "Hoja" = campo Referencia (28.01, SAUCES-01...).
+function pdInitTab(){
+  var f=document.getElementById('pdFecha');
+  if(f&&!f.value)f.value=fechaSel;
   pdCargarHojas();
 }
 function pdCargarHojas(){
