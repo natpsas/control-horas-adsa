@@ -181,7 +181,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <div class="card"><h2>Asignación de Actividades</h2>
 <div class="fb"><input type="text" id="srcW" placeholder="🔍 Buscar..." oninput="renderT1()"><select id="fltA" onchange="renderT1()"><option value="">Todas las áreas</option></select>
 <select id="fltEstadoT1" onchange="renderT1()"><option value="">Todos los estados</option><option value="sin">⚠️ Sin actividad asignada</option><option value="asignado">📋 Asignados (pendiente)</option><option value="consol">⏳ Consolidados</option><option value="aprobado">✅ Aprobados</option><option value="na">🚫 Inasistencias</option></select>
-<button class="btn btn-s btn-sm" onclick="guardarAsignaciones()">💾 Guardar</button><button id="btnAsigMasiva" class="btn btn-p btn-sm" onclick="modalAsignacionMasiva()" style="display:none" title="Asignar la misma actividad a varios trabajadores a la vez">👥 Asig. Masiva</button><button id="btnImpAsg" class="btn btn-sm" onclick="importarAsgCSV()" style="display:none;background:#553c9a;color:#fff;border:none" title="Importar asignaciones desde Excel/CSV">📥 Importar CSV</button><button id="btnPlantAsg" class="btn btn-sm" onclick="descargarPlantillaAsg()" style="display:none;background:#744210;color:#fff;border:none" title="Descargar plantilla Excel para importar asignaciones">📋 Plantilla</button></div>
+<button class="btn btn-s btn-sm" onclick="guardarAsignaciones()">💾 Guardar</button><button id="btnAsigMasiva" class="btn btn-p btn-sm" onclick="modalAsignacionMasiva()" style="display:none" title="Asignar la misma actividad a varios trabajadores a la vez">👥 Asig. Masiva</button><button id="btnImpAsg" class="btn btn-sm" onclick="importarAsgCSV()" style="display:none;background:#553c9a;color:#fff;border:none" title="Importar asignaciones desde Excel/CSV">📥 Importar CSV</button><button id="btnPlantAsg" class="btn btn-sm" onclick="descargarPlantillaAsg()" style="display:none;background:#744210;color:#fff;border:none" title="Descargar plantilla Excel para importar asignaciones">📋 Plantilla</button><button id="btnImpConsol1" class="btn btn-sm" onclick="importarConsolidadoCSV()" style="display:none;background:#276749;color:#fff;border:none" title="Importar registros CONSOLIDADOS (CSV/Excel) — mismo importador que en la pestaña Consolidación">📥 Importar Consolidado</button></div>
 <div id="t1List"></div>
 <button class="btn btn-s" onclick="guardarT1()" style="margin-top:12px;width:100%">💾 Guardar Asignaciones</button>
 </div></div>
@@ -422,7 +422,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.30 · 2026-06-17';
+var APP_VERSION='v6.31 · 2026-07-17';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -657,6 +657,15 @@ function _normModsArr(arr){
   var out=[],seen={};
   (arr||[]).forEach(function(x){var id=_modCanon(x);if(id&&!seen[id]){seen[id]=1;out.push(id);}});
   return out;
+}
+// Si la actividad usa módulo, no vino ninguno y su unidad tiene UNO solo activo
+// → se asigna automáticamente (misma regla de auto-selección del resto de la app).
+function _autoModUnico(act,mods){
+  if(act&&act.usa_modulo&&(!mods||!mods.length)){
+    var mu=MOD.filter(function(m){return m.activo&&m.unidad===act.unidad});
+    if(mu.length===1)return [mu[0].id];
+  }
+  return mods||[];
 }
 // Sanea una asignación: módulos canónicos + migra claves viejas de EXTRAS
 // (pre-v6.25 sin sufijo _E; el null en _hash fuerza re-subida que corrige el Title en SP)
@@ -2158,6 +2167,7 @@ function renderT1(){
   if(bam)bam.style.display=esAdmin()?'inline-block':'none';
   var bi=document.getElementById('btnImpAsg');if(bi)bi.style.display=esAdmin()?'inline-block':'none';
   var bp=document.getElementById('btnPlantAsg');if(bp)bp.style.display=esAdmin()?'inline-block':'none';
+  var bic=document.getElementById('btnImpConsol1');if(bic)bic.style.display=esAdmin()?'inline-block':'none';
 
   guardarModsEnMem();
   var c=document.getElementById('t1List'),src=(document.getElementById('srcW').value||'').toLowerCase(),flt=document.getElementById('fltA').value,d=fechaSel;
