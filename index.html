@@ -337,11 +337,14 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 </div>
 
 <div id="t6" class="tc">
-<div class="alert al-i"><b>Planilla digital</b> — Réplica de la planilla física, hoja por hoja, desde los registros consolidados.</div>
+<div class="alert al-i"><b>Planilla digital / Verificación de transcripción</b> — Cada planilla en digital, hoja por hoja, para cotejar renglón por renglón contra la foto.</div>
 <div class="card">
   <div style="display:flex;gap:10px;align-items:flex-end;flex-wrap:wrap;margin-bottom:10px">
-    <div class="fg" style="margin:0"><label>📅 Fecha</label><input type="date" id="pdFecha" onchange="pdCargarHojas()"></div>
+    <div class="fg" style="margin:0"><label>📅 Desde</label><input type="date" id="pdFecha" onchange="pdCargarHojas()"></div>
+    <div class="fg" style="margin:0"><label>📅 Hasta <span style="color:#a0aec0;font-weight:400">(opcional)</span></label><input type="date" id="pdHasta" onchange="pdCargarHojas()"></div>
     <div class="fg" style="margin:0;min-width:180px"><label>Hoja</label><select id="pdHoja" onchange="renderPlanillaDigital()"><option value="">(todas las hojas)</option></select></div>
+    <div class="fg" style="margin:0;min-width:215px"><label>Orden dentro de la hoja</label><select id="pdOrden" onchange="renderPlanillaDigital()"><option value="captura">Renglón / orden de captura (= foto)</option><option value="nombre">Alfabético por nombre</option><option value="codigo">Por código de trabajador</option></select></div>
+    <label style="display:flex;align-items:center;gap:5px;font-size:13px;margin-bottom:2px"><input type="checkbox" id="pdSoloRev" onchange="renderPlanillaDigital()"> Solo filas a revisar</label>
     <button class="btn btn-i" onclick="impPlanillaDigital()">🖨 Imprimir</button>
   </div>
   <div id="pdBody"></div>
@@ -361,6 +364,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
 <button class="btn btn-sm" onclick="subirTodoSP()" style="margin-left:6px;background:#276749;color:#fff;border:none" title="Sube TODOS los registros a ControlHoras_Registros (incluye los que ya tienen ID)">☁️ Subir todo a SP</button>
 <button class="btn btn-sm" onclick="diagnosticarSPReg()" style="margin-left:6px;background:#2b4c8c;color:#fff;border:none" title="Verifica que la lista ControlHoras_Registros esté bien configurada">🔍 Diagnosticar lista</button>
 <button class="btn btn-sm" onclick="spCrearListaAsignaciones()" style="margin-left:6px;background:#065f46;color:#fff;border:none" title="Crea la lista ControlHoras_Asignaciones en SharePoint (nueva arquitectura fila-por-asignación)">🏗️ Crear lista Asignaciones</button>
+<button class="btn btn-sm" onclick="spCrearColRenglon()" style="margin-left:6px;background:#7a541d;color:#fff;border:none" title="Agrega la columna Renglon (nº de fila de la planilla física) a ControlHoras_Registros">📏 Crear columna Renglon</button>
 </div>
 <div class="grid-2">
 <div class="card"><h2>👥 Trabajadores</h2>
@@ -1027,7 +1031,7 @@ function genRegId(){
   return Date.now().toString(36).toUpperCase()+Math.random().toString(36).substr(2,5).toUpperCase();
 }
 function regToSPCols(r){
-  return {
+  var o={
     Title:r.id,
     Fecha:r.f,Codigo:r.w,Trabajador:r.n,Area:r.ar,
     Unidad:r.uni||'',Categoria:r.cat||'',SubCategoria:r.sub||'',ActividadId:r.act||'',
@@ -1041,10 +1045,53 @@ function regToSPCols(r){
     FechaConsolid:r.fc||'',FechaAprob:r.fa||'',
     MotivoRechazo:r.mr||'',AprobadoPor:r.aprobado_por||''
   };
+  // Solo si la lista ya tiene la columna: enviar un campo inexistente hace fallar
+  // TODO el guardado de la fila (400), así que una lista vieja debe seguir andando.
+  if(SP_COL_RENGLON)o.Renglon=(r.rg!=null&&r.rg!=='')?Number(r.rg):null;
+  return o;
+}
+// === Renglón de la planilla física (v6.36) ===
+// Nº de fila tal como está escrita en la foto. Es lo único que permite mostrar la
+// planilla digital en el mismo orden que el papel. La columna puede no existir todavía
+// en la lista: se detecta al conectar y se crea desde Gestión.
+var SP_COL_RENGLON=false;
+async function spDetectarColRenglon(){
+  if(!SP_READY)return false;
+  try{
+    var token=await _getToken();
+    var u=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields?$select=InternalName&$filter="+encodeURIComponent("InternalName eq 'Renglon'");
+    var r=await fetch(u,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(!r.ok){SP_COL_RENGLON=false;return false;}
+    var d=await r.json();
+    SP_COL_RENGLON=!!(d.value&&d.value.length);
+  }catch(e){SP_COL_RENGLON=false;}
+  return SP_COL_RENGLON;
+}
+async function spCrearColRenglon(){
+  if(!SP_READY){alert('Sin conexión a SharePoint.');return;}
+  try{
+    if(await spDetectarColRenglon()){toast('✅ La columna Renglon ya existe en '+SP_LIST_REG);return;}
+    var token=await _getToken();var digest=await _spGetDigest();
+    var xml="<Field Type='Number' DisplayName='Renglon' Name='Renglon' StaticName='Renglon' Decimals='0' Min='0'/>";
+    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields/createfieldasxml",{
+      method:'POST',
+      headers:{'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token},
+      body:JSON.stringify({parameters:{SchemaXml:xml,Options:8}}) // 8 = respetar el nombre interno
+    });
+    if(!r.ok){var t=await r.text();throw new Error(r.status+': '+t.substring(0,140));}
+    SP_COL_RENGLON=true;
+    toast('✅ Columna Renglon creada en '+SP_LIST_REG+'. Vuelve a sincronizar para subir los renglones.',
+      'info',7000);
+  }catch(e){
+    alert('No se pudo crear la columna Renglon:\n'+e.message+
+      '\n\nSi es un problema de permisos, pide a un administrador del sitio que agregue a la lista "'+SP_LIST_REG+
+      '" una columna de tipo Número llamada exactamente: Renglon');
+  }
 }
 function spColsToReg(it){
   return {
     id:it.Title,_spId:it.Id,
+    rg:(it.Renglon!=null&&it.Renglon!=='')?Number(it.Renglon):null,
     f:it.Fecha||'',w:it.Codigo||'',n:it.Trabajador||'',ar:it.Area||'',
     uni:it.Unidad||'',cat:it.Categoria||'',sub:it.SubCategoria||'',act:it.ActividadId||'',
     tp:it.TipoHora||'NORMAL',
@@ -1411,6 +1458,9 @@ async function spCargarRegistros(){
   try{
     var token=await _getToken();
     var sel='Id,Title,Fecha,Codigo,Trabajador,Area,Unidad,Categoria,SubCategoria,ActividadId,TipoHora,HAsig,HReg,Rendimiento,Indicador,HHuellero,Entrada,Salida,Modulos,Referencia,Observaciones,Estado,FechaConsolid,FechaAprob,MotivoRechazo,AprobadoPor';
+    // Renglon solo si la lista lo tiene: pedir una columna inexistente devuelve 400.
+    await spDetectarColRenglon();
+    if(SP_COL_RENGLON)sel+=',Renglon';
     // VENTANA DE 90 DÍAS: la lista crece indefinidamente; bajarla completa en
     // cada sync satura ancho de banda y el localStorage (~5 MB). Se cargan solo
     // los últimos 90 días; la historia anterior VIVE en SharePoint (fuente de
@@ -2817,6 +2867,7 @@ function procesarImportConsolidado(rows){
   var cRef=col(['referencia','ref','reference']);
   var cObs=col(['observ','obs','note']);
   var cSt=col(['aprobacion','estado','status','state']);
+  var cReng=col(['renglon','nrofila','numerofila']);
   if(cFecha<0||cCod<0){alert('No se encontraron columnas Fecha y/o Código. Usa la plantilla descargable.');return;}
   // Mapas
   var trbByCode={};TRB.forEach(function(t){trbByCode[t.codigo]=t;});
@@ -2863,7 +2914,17 @@ function procesarImportConsolidado(rows){
       cat:act?act.categoria||'':catRaw,sub:act?act.subcategoria||'':subRaw,
       tp:tipo,h:hAsig||hReg,hr:hReg,rend:rend,ind:act?act.indicador||'':'',
       hhu:null,ehu:null,shu:null,mods:mods,obs:obs,ref:ref,
+      rg:cReng>=0?(parseInt(row[cReng],10)||null):null,
       st:st,excede:false,fc:new Date().toISOString(),fa:'',mr:'',aprobado_por:''
+    });
+  }
+  // Sin columna Renglon: se numera 1..n por hoja respetando el orden del archivo. Si el
+  // archivo se transcribió en el orden de la foto, la planilla digital queda igual al papel.
+  if(cReng<0){
+    var _seq={};
+    nuevos.forEach(function(r){
+      var k=r.f+'|'+(r.ref||'(sin hoja)');
+      _seq[k]=(_seq[k]||0)+1;r.rg=_seq[k];
     });
   }
   if(!nuevos.length){
@@ -3958,73 +4019,172 @@ function expNominaCSV(fmt){
   l.download='nomina-'+(f.desde||'todo')+(f.hasta&&f.hasta!==f.desde?'_'+f.hasta:'')+(esES?'-coma':'-punto')+'.csv';l.click();
   toast('\u2705 CSV de n\u00f3mina ('+(esES?'coma decimal':'punto decimal')+') \u2014 '+aprob.length+' filas aprobadas');
 }
-// === PLANILLA DIGITAL (pestaña 🧾 · réplica de la planilla física, agrupada por hoja) ===
-// Fuente: registros consolidados (reg). "Hoja" = campo Referencia (28.01, SAUCES-01...).
+// === PLANILLA DIGITAL / VERIFICACIÓN DE TRANSCRIPCIÓN (pestaña 🧾) ===
+// Réplica de la planilla física hoja por hoja, para cotejar renglón por renglón
+// contra la foto. Fuente: registros consolidados (reg). "Hoja" = campo Referencia
+// (27.01, 28.S01, 29.E1...). Sustituye al reporte suelto "VERIFICACION TRANSCRIPCION".
 function pdInitTab(){
   var f=document.getElementById('pdFecha');
   if(f&&!f.value)f.value=fechaSel;
   pdCargarHojas();
 }
+function _pdRango(){
+  var d=document.getElementById('pdFecha'),h=document.getElementById('pdHasta');
+  var desde=d?d.value:'';var hasta=(h&&h.value)?h.value:desde;
+  if(hasta&&desde&&hasta<desde){var t=desde;desde=hasta;hasta=t;}
+  return {desde:desde,hasta:hasta};
+}
+function _pdFilas(){
+  var rg=_pdRango();if(!rg.desde)return [];
+  var hojaSel=document.getElementById('pdHoja');var hojaFlt=hojaSel?hojaSel.value:'';
+  return reg.filter(function(r){
+    if(!r.f||r.f<rg.desde||r.f>rg.hasta)return false;
+    return !hojaFlt||(r.ref||'(sin hoja)')===hojaFlt;
+  });
+}
 function pdCargarHojas(){
-  var f=document.getElementById('pdFecha').value;
+  var rg=_pdRango();
   var sel=document.getElementById('pdHoja');if(!sel)return;
-  var hojas=[];reg.forEach(function(r){if(r.f===f){var h=(r.ref||'(sin hoja)');if(hojas.indexOf(h)<0)hojas.push(h);}});
+  var prev=sel.value;
+  var hojas=[];reg.forEach(function(r){
+    if(!r.f||r.f<rg.desde||r.f>rg.hasta)return;
+    var h=(r.ref||'(sin hoja)');if(hojas.indexOf(h)<0)hojas.push(h);
+  });
   hojas.sort();
   sel.innerHTML='<option value="">(todas las hojas)</option>';
   hojas.forEach(function(h){sel.innerHTML+='<option value="'+_esc(h)+'">'+_esc(h)+'</option>';});
+  if(prev&&hojas.indexOf(prev)>=0)sel.value=prev;
   renderPlanillaDigital();
 }
-function _pdHTML(f,hojaFlt,paraImpresion){
-  var rows=reg.filter(function(r){return r.f===f&&(!hojaFlt||(r.ref||'(sin hoja)')===hojaFlt);});
-  if(!rows.length)return '<p style="color:#a0aec0;padding:10px">Sin registros consolidados para esa fecha'+(hojaFlt?' y hoja':'')+'.</p>';
-  var porHoja={};rows.forEach(function(r){var h=(r.ref||'(sin hoja)');(porHoja[h]=porHoja[h]||[]).push(r);});
+// Orden de captura: r.rg (renglón de la planilla física, si se transcribió) y si no
+// _spId (Id de la lista SP = orden de alta, el mismo en que se transcribió la hoja).
+// Las filas locales aún sin subir van al final, en su orden de creación.
+function _pdCmpCaptura(a,b){
+  var ra=(a.rg!=null&&a.rg!=='')?Number(a.rg):null;
+  var rb=(b.rg!=null&&b.rg!=='')?Number(b.rg):null;
+  if(ra!==null&&rb!==null&&ra!==rb)return ra-rb;
+  if(ra!==null&&rb===null)return -1;
+  if(ra===null&&rb!==null)return 1;
+  var ka=(a._spId!=null&&a._spId!=='')?Number(a._spId):Infinity;
+  var kb=(b._spId!=null&&b._spId!=='')?Number(b._spId):Infinity;
+  if(ka!==kb)return ka-kb;
+  return String(a.id||'').localeCompare(String(b.id||''));
+}
+function _pdIdCorto(r){
+  if(r._spId!=null&&r._spId!=='')return String(r._spId);
+  return String(r.id||'').slice(-6);
+}
+// Las observaciones traen la transcripción literal y, entre corchetes, las notas de
+// criterio: "Podando [P - 7 horas]" → transcripción "Podando" · nota "P - 7 horas".
+function _pdSplitObs(obs){
+  var o=String(obs||'');var notas=[];
+  var txt=o.replace(/\[([^\]]*)\]/g,function(m,c){notas.push(c.trim());return ' ';});
+  return {t:txt.replace(/\s+/g,' ').trim(),n:notas.join(' · ')};
+}
+function _pdJornada(f){
+  var d=new Date(f+'T12:00:00').getDay();
+  return d===6?4:8; // sábado 4h
+}
+function _pdHTML(paraImpresion){
+  var ordSel=document.getElementById('pdOrden');
+  var ord=ordSel?ordSel.value:'captura';
+  var soloRevEl=document.getElementById('pdSoloRev');
+  var soloRev=!!(soloRevEl&&soloRevEl.checked);
+  var rows=_pdFilas();
+  if(!rows.length)return '<p style="color:#a0aec0;padding:10px">Sin registros consolidados para ese rango de fechas.</p>';
   var dias=['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado'];
-  var diaN=dias[new Date(f+'T12:00:00').getDay()];
+  // Agrupar por planilla: una hoja puede repetirse en días distintos → clave fecha+hoja.
+  var grupos={};
+  rows.forEach(function(r){
+    var k=r.f+'|'+(r.ref||'(sin hoja)');
+    (grupos[k]=grupos[k]||[]).push(r);
+  });
+  var claves=Object.keys(grupos).sort();
+  // Marca de revisión: nota entre corchetes, sin módulos, o horas fuera de jornada.
+  function _rev(r){
+    var s=_pdSplitObs(r.obs);
+    if(s.n)return 'nota';
+    if(!(r.mods&&r.mods.length))return 'sinmod';
+    var hr=r.hr||0;
+    if(hr<=0)return 'horas';
+    if(r.tp!=='EXTRAS'&&hr>_pdJornada(r.f))return 'horas';
+    return '';
+  }
   var html='';
-  Object.keys(porHoja).sort().forEach(function(hoja){
-    var lista=porHoja[hoja].slice().sort(function(a,b){return (a.n||'').localeCompare(b.n||'');});
-    var tot=0,totE=0,ws={};lista.forEach(function(r){if(r.tp==='EXTRAS')totE+=r.hr||0;else tot+=r.hr||0;ws[r.w]=1;});
-    html+='<div style="margin:12px 0 4px;font-size:15px;font-weight:700;color:#2d5a3d">Hoja '+_esc(hoja)+' — '+diaN+' '+f+'</div>';
-    html+='<div style="margin:4px 0 8px;padding:7px 12px;background:#e8f0ea;border-left:4px solid #2d5a3d;font-size:13px">'+Object.keys(ws).length+' trabajador(es) · '+tot.toFixed(1)+'h normales'+(totE?' · <b style="color:#92400e">'+totE.toFixed(1)+'h extras</b>':'')+'</div>';
-    html+='<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;background:#fff;font-size:13px">';
+  // --- Índice de planillas ---
+  html+='<div style="background:#fff;border:1px solid #ccc;border-radius:4px;padding:9px 11px;line-height:2.1;margin-bottom:10px">';
+  html+='<b style="font-size:12px;color:#4a5568">'+claves.length+' planilla(s) · '+rows.length+' línea(s)</b><br>';
+  claves.forEach(function(k,gi){
+    var hoja=k.split('|')[1];var nrev=0;
+    grupos[k].forEach(function(r){if(_rev(r))nrev++;});
+    var col=nrev?'background:#fff3cd;color:#8a6d00':'background:#e8f0ea;color:#2d5a3d';
+    html+='<a href="#pdh'+gi+'" style="display:inline-block;margin-right:7px;padding:2px 8px;border-radius:3px;text-decoration:none;font-size:12px;'+col+'">'+_esc(hoja)+(nrev?' ('+nrev+')':'')+'</a>';
+  });
+  html+='</div>';
+  // --- Una tabla por planilla ---
+  claves.forEach(function(k,gi){
+    var parts=k.split('|');var f=parts[0];var hoja=parts[1];
+    var lista=grupos[k].slice().sort(
+      ord==='nombre'?function(a,b){return (a.n||'').localeCompare(b.n||'');}
+      :ord==='codigo'?function(a,b){return (a.w||'').localeCompare(b.w||'');}
+      :_pdCmpCaptura);
+    var tot=0,totE=0,ws={},nrev=0;
+    lista.forEach(function(r){if(r.tp==='EXTRAS')totE+=r.hr||0;else tot+=r.hr||0;ws[r.w]=1;if(_rev(r))nrev++;});
+    var visibles=soloRev?lista.filter(function(r){return _rev(r);}):lista;
+    var diaN=dias[new Date(f+'T12:00:00').getDay()];
+    html+='<div id="pdh'+gi+'" style="margin:16px 0 4px;font-size:15px;font-weight:700;color:#fff;background:#2d5a3d;padding:6px 10px;border-radius:4px">Hoja '+_esc(hoja)+' — '+diaN+' '+f+'</div>';
+    html+='<div style="margin:4px 0 8px;padding:7px 12px;background:#e8f0ea;border-left:4px solid #2d5a3d;font-size:13px">'+lista.length+' línea(s) · '+Object.keys(ws).length+' persona(s) · '+tot.toFixed(1)+'h normales'+(totE?' · <b style="color:#92400e">'+totE.toFixed(1)+'h extras</b>':'')+(nrev?' · <b style="color:#8a6d00">'+nrev+' a revisar</b>':'')+'</div>';
+    if(!visibles.length){html+='<p style="color:#a0aec0;font-size:12px;margin:0 0 8px">(sin filas marcadas para revisar en esta hoja)</p>';return;}
+    html+='<div style="overflow-x:auto"><table style="border-collapse:collapse;width:100%;background:#fff;font-size:12.5px">';
     html+='<thead><tr>';
-    ['#','Trabajador','Código','Actividad','Detalle escrito','Módulos','Tipo','Horas','Estado'].forEach(function(c){html+='<th style="border:1px solid #ccc;padding:5px 7px;text-align:left;background:#2d5a3d;color:#fff">'+c+'</th>';});
+    ['Renglón','ID','Código','Nombre','Área','UN','Módulos','Lo que reportó (transcripción)','Actividad asignada','Horas','Tipo','Nota','Estado'].forEach(function(c){html+='<th style="border:1px solid #ccc;padding:5px 7px;text-align:left;background:#dfe9e2;color:#1f3d29;white-space:nowrap">'+c+'</th>';});
     html+='</tr></thead><tbody>';
-    lista.forEach(function(r,i){
-      var bg=i%2?'background:#f2f7f3;':'';
-      var revisar=(r.obs||'').indexOf('[')>=0||!(r.mods&&r.mods.length);
-      if(revisar)bg='background:#fff3cd;';
+    visibles.forEach(function(r,i){
+      var s=_pdSplitObs(r.obs);
+      var rv=_rev(r);
+      var bg=i%2?'background:#f6faf7;':'';
+      if(rv==='horas')bg='background:#ffe0e0;';
+      else if(rv)bg='background:#fff3cd;';
+      // Renglón: el de la planilla física si se transcribió; si no, el correlativo.
+      var reng=(r.rg!=null&&r.rg!=='')?String(r.rg):String(i+1);
+      var td='border:1px solid #ccc;padding:4px 7px;vertical-align:top';
       html+='<tr style="'+bg+'">';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px;text-align:center;color:#718096">'+(i+1)+'</td>';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-weight:600">'+_esc(r.n||'')+'</td>';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:11px;color:#718096">'+_esc(r.w||'')+'</td>';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px">'+_esc(r.sub||'')+'</td>';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:12px;color:#4a5568;font-style:italic">'+_esc(r.obs||'')+'</td>';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:12px">'+_esc((r.mods||[]).join(', '))+'</td>';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:11px;'+(r.tp==='EXTRAS'?'color:#92400e;font-weight:700':'color:#276749')+'">'+(r.tp==='EXTRAS'?'EXTRA':'Normal')+'</td>';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px;text-align:center;font-weight:700">'+((r.hr||0).toFixed(1))+'</td>';
-      html+='<td style="border:1px solid #ccc;padding:4px 7px;font-size:11px">'+_esc(r.st||'')+'</td>';
+      html+='<td style="'+td+';text-align:center;font-weight:700;background:#eef3ef">'+_esc(reng)+'</td>';
+      html+='<td style="'+td+';text-align:center;font-family:Consolas,monospace;font-size:11px;color:#888" title="'+_esc(r.id||'')+'">'+_esc(_pdIdCorto(r))+'</td>';
+      html+='<td style="'+td+';font-size:11px;color:#718096;white-space:nowrap">'+_esc(r.w||'')+'</td>';
+      html+='<td style="'+td+';font-weight:600">'+_esc(r.n||'')+'</td>';
+      html+='<td style="'+td+';font-size:11px;color:#718096">'+_esc(r.ar||'')+'</td>';
+      html+='<td style="'+td+';font-size:11px;color:#2d5a3d;font-weight:600">'+_esc(r.uni||'')+'</td>';
+      html+='<td style="'+td+';font-size:12px">'+_esc((r.mods||[]).join(', '))+'</td>';
+      html+='<td style="'+td+';font-size:12px;color:#4a5568;font-style:italic">'+_esc(s.t)+'</td>';
+      html+='<td style="'+td+'">'+_esc(r.sub||'')+'</td>';
+      html+='<td style="'+td+';text-align:center;font-weight:700">'+((r.hr||0).toFixed(1))+'</td>';
+      html+='<td style="'+td+';font-size:11px;'+(r.tp==='EXTRAS'?'color:#92400e;font-weight:700':'color:#276749')+'">'+(r.tp==='EXTRAS'?'EXTRA':'Normal')+'</td>';
+      html+='<td style="'+td+';font-size:11.5px;color:#8a6d00">'+_esc(s.n)+'</td>';
+      html+='<td style="'+td+';font-size:11px">'+_esc(r.st||'')+'</td>';
       html+='</tr>';
     });
     html+='</tbody></table></div>';
   });
-  if(!paraImpresion)html+='<p style="font-size:11px;color:#a0aec0;margin-top:8px">Amarillo = fila con marca [REVISAR] o sin módulos.</p>';
+  if(!paraImpresion)html+='<p style="font-size:11px;color:#a0aec0;margin-top:8px">Amarillo = nota entre corchetes o fila sin módulos · Rojo = horas fuera de la jornada (8h, sábado 4h) · <b>Renglón</b> = número de fila de la planilla física si se transcribió, si no el correlativo · <b>ID</b> = identificador del registro (el id completo aparece al pasar el mouse).</p>';
   return html;
 }
 function renderPlanillaDigital(){
-  var f=document.getElementById('pdFecha').value;
-  var hoja=document.getElementById('pdHoja')?document.getElementById('pdHoja').value:'';
   var body=document.getElementById('pdBody');if(!body)return;
-  body.innerHTML=_pdHTML(f,hoja,false);
+  body.innerHTML=_pdHTML(false);
 }
 function impPlanillaDigital(){
-  var f=document.getElementById('pdFecha').value;
-  var hoja=document.getElementById('pdHoja')?document.getElementById('pdHoja').value:'';
+  var rg=_pdRango();
+  var hojaSel=document.getElementById('pdHoja');var hoja=hojaSel?hojaSel.value:'';
+  var ordSel=document.getElementById('pdOrden');
+  var ordTxt=ordSel?((ordSel.options[ordSel.selectedIndex]||{}).text||''):'';
+  var per=rg.desde+(rg.hasta&&rg.hasta!==rg.desde?' al '+rg.hasta:'');
   var win=window.open('','_blank');
-  win.document.write('<html><head><meta charset="utf-8"><title>Planilla digital '+f+'</title></head>');
+  win.document.write('<html><head><meta charset="utf-8"><title>Planilla digital '+per+'</title></head>');
   win.document.write('<body style="font-family:Segoe UI,Arial,sans-serif;margin:16px;color:#222">');
-  win.document.write('<h1 style="font-size:18px">🫐 Arándanos de San Antonio — Planilla digital '+f+(hoja?' · Hoja '+hoja:'')+'</h1>');
-  win.document.write(_pdHTML(f,hoja,true));
+  win.document.write('<h1 style="font-size:18px">🫐 Arándanos de San Antonio — Planilla digital / verificación '+per+(hoja?' · Hoja '+hoja:'')+'</h1>');
+  if(ordTxt)win.document.write('<p style="font-size:11px;color:#666;margin:0 0 6px">Orden dentro de la hoja: '+ordTxt+'</p>');
+  win.document.write(_pdHTML(true));
   win.document.write('</body></html>');
   win.document.close();win.focus();win.print();
 }
