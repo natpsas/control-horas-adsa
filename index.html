@@ -327,6 +327,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     <button class="btn btn-s" onclick="expJSON()">💾 Backup JSON</button>
     <button class="btn btn-i" onclick="impJSON()">📂 Importar JSON</button>
     <button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar fecha actual</button>
+    <button class="btn btn-d" onclick="limpiarRangoRegistros()" style="background:#9a3412;border-color:#9a3412" title="Borra las horas SOLO del rango Desde/Hasta elegido arriba. NO toca trabajadores, actividades ni módulos.">🧹 Borrar horas del rango</button>
     <button class="btn btn-d" onclick="limpiarTodosRegistros()" style="background:#744210;border-color:#744210" title="Borra asignaciones, consolidados y huellero de TODAS las fechas. NO toca trabajadores, actividades, módulos ni usuarios.">🧹 Borrar horas (todas las fechas)</button>
     <button class="btn btn-i" onclick="purgarLapidas()" style="background:#4a5568" title="Descarta borrados pendientes que ya se consumaron y mantienen el contador 'sin subir' en rojo">🧯 Purgar borrados pendientes</button>
     <label id="lblAprobMasiva" style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="chkAprobMasiva" checked onchange="aprobacionMasivaActiva=this.checked;guardarLS()"> Aprob. masiva</label>
@@ -441,7 +442,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.38 · 2026-08-13';
+var APP_VERSION='v6.39 · 2026-08-13';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1488,18 +1489,15 @@ async function migrarAsgAListaPropia(){
   }
 }
 
-// ¿La lista ControlHoras_Registros tiene la columna Renglon? Se consulta una
-// sola vez: pedir en $select una columna inexistente devuelve 400 y rompería
-// toda la carga de registros (y con ella la resolución de lápidas).
-var SP_COL_RENGLON=false,_SP_COL_RENGLON_CHK=false;
+// ¿La lista ControlHoras_Registros tiene la columna Renglon? Se apoya en
+// spDetectarCols() para que la detección de LECTURA (aquí) y la de ESCRITURA
+// (SP_COLS, en regToSPCols) queden siempre sincronizadas. Pedir en $select una
+// columna inexistente devuelve 400 y rompería toda la carga de registros —y con
+// ella la resolución de lápidas—, así que ante la duda se omite.
+var SP_COL_RENGLON=false;
 async function spDetectarColRenglon(){
-  if(_SP_COL_RENGLON_CHK)return SP_COL_RENGLON;
-  try{
-    var token=await _getToken();
-    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields?$filter=InternalName eq 'Renglon'&$select=InternalName",
-      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
-    if(r.ok){var d=await r.json();SP_COL_RENGLON=!!(d.value&&d.value.length);_SP_COL_RENGLON_CHK=true;}
-  }catch(e){console.warn('spDetectarColRenglon:',e.message);} // ante la duda, sin Renglon
+  try{await spDetectarCols();SP_COL_RENGLON=!!SP_COLS.Renglon;}
+  catch(e){console.warn('spDetectarColRenglon:',e.message);}
   return SP_COL_RENGLON;
 }
 async function spCargarRegistros(){
@@ -1707,6 +1705,18 @@ async function migrarRegistrosSP(){
     toast('✅ '+sinId.length+' registros migrados a ControlHoras_Registros');
   }catch(e){toast('⚠️ Error migrando: '+e.message,'warn');}
 }
+// Une un catálogo local con el que llega de SharePoint SIN perder lo local:
+// gana la versión de SP para los ids que existen en ambos (es la compartida),
+// y se conservan los ids que solo están en local (creados y aún no subidos).
+var _cfgHash={}; // hash de la última config escrita a SP (evita reescrituras y throttling)
+function _mergeCatalogo(local,remoto){
+  if(!Array.isArray(remoto))return local||[];
+  if(!Array.isArray(local)||!local.length)return remoto;
+  var enSP={};remoto.forEach(function(x){if(x&&x.id!=null)enSP[String(x.id)]=1;});
+  var soloLocal=local.filter(function(x){return x&&x.id!=null&&!enSP[String(x.id)];});
+  if(soloLocal.length)console.info('_mergeCatalogo: se conservan '+soloLocal.length+' elemento(s) locales aún no sincronizados:',soloLocal.map(function(x){return x.id;}).join(', '));
+  return remoto.concat(soloLocal);
+}
 async function spCargar(){
   // ── Carga todos los blobs de ControlHoras_Datos en UNA sola petición ──────
   var mapa={
@@ -1744,9 +1754,13 @@ async function spCargar(){
     'usr':function(v){usr=v;localStorage.setItem('usr',JSON.stringify(v))},
     // 'TRB' → ControlHoras_Trabajadores (lista dedicada, ver spCargarTRB)
     // 'ACT' → ControlHoras_Actividades  (lista dedicada, ver spCargarACT)
-    'MOD':function(v){MOD=v;localStorage.setItem('MOD_custom',JSON.stringify(v))},
-    'UNI':function(v){UNI=v;localStorage.setItem('UNI_custom',JSON.stringify(v))},
-    'CARGOS':function(v){CARGOS=v;localStorage.setItem('CARGOS_custom',JSON.stringify(v))},
+    // Catálogos: lo que llega de SP NO puede pisar lo creado localmente que aún
+    // no subió. Si la escritura a SP falló (p.ej. 429 throttling), sobrescribir
+    // haría "desaparecer" un módulo/unidad/cargo recién creado. Se conserva todo
+    // lo local cuyo id no viene de SP y se reintenta subir en el próximo ciclo.
+    'MOD':function(v){MOD=_mergeCatalogo(MOD,v);localStorage.setItem('MOD_custom',JSON.stringify(MOD))},
+    'UNI':function(v){UNI=_mergeCatalogo(UNI,v);localStorage.setItem('UNI_custom',JSON.stringify(UNI))},
+    'CARGOS':function(v){CARGOS=_mergeCatalogo(CARGOS,v);localStorage.setItem('CARGOS_custom',JSON.stringify(CARGOS))},
     'aprobMasiva':function(v){aprobacionMasivaActiva=v;localStorage.setItem('aprobMasiva',JSON.stringify(v))},
     'PERMISOS':function(v){for(var k in v)if(PERMISOS[k])PERMISOS[k]=Object.assign({},PERMISOS[k],v[k]);localStorage.setItem('PERMISOS_custom',JSON.stringify(PERMISOS))}
   };
@@ -1837,7 +1851,20 @@ async function spGuardar(){
     // TRB y ACT ya no van en blob — tienen listas SP propias (ControlHoras_Trabajadores / Actividades)
     if(usuarioLogueado==='Admin'){
       var config={'MOD':MOD,'UNI':UNI,'CARGOS':CARGOS,'usr':usr,'aprobMasiva':aprobacionMasivaActiva,'PERMISOS':PERMISOS};
-      for(var k in config)await spEscribirItem(k,config[k]);
+      // Se escribe solo lo que cambió y con 1 reintento: si SharePoint responde
+      // 429 (throttling), un catálogo recién creado no debe quedarse sin subir.
+      for(var k in config){
+        var _h=_stableStringify(config[k]);
+        if(_cfgHash[k]===_h)continue;              // sin cambios: no reescribir
+        try{
+          await spEscribirItem(k,config[k]);
+          _cfgHash[k]=_h;
+        }catch(e1){
+          await new Promise(function(res){setTimeout(res,1500);}); // esperar y reintentar
+          try{await spEscribirItem(k,config[k]);_cfgHash[k]=_h;}
+          catch(e2){console.warn('spGuardar config "'+k+'" (se reintentará):',e2.message);}
+        }
+      }
     }
     // asg — si ControlHoras_Asignaciones existe: fila por fila (pérdida de 1 fila
     // no afecta al resto). Si no existe aún: blob por fecha como antes (compatibilidad).
@@ -4589,6 +4616,37 @@ async function purgarLapidas(){
   actualizarPendientesSP();
   spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
   toast('🧹 '+quitadas+' borrado(s) pendiente(s) descartado(s)'+((_asgTomb.length+_regTomb.length)?' · quedan '+(_asgTomb.length+_regTomb.length):''),'info',5000);
+}
+// Borra el histórico de horas SOLO del rango de fechas seleccionado arriba
+// (Desde / Hasta de "Exportar / Archivar"). No toca trabajadores, actividades,
+// módulos, cargos ni usuarios. Con lápidas: el borrado también llega a SP.
+async function limpiarRangoRegistros(){
+  if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para borrar registros.');return;}
+  var r=getExpRango();
+  if(!r.desde||!r.hasta){alert('Elegí primero un rango de fechas (Desde / Hasta) en esta sección.');return;}
+  if(r.desde>r.hasta){alert('El "Desde" es posterior al "Hasta".');return;}
+  var regDel=reg.filter(function(x){return x.f>=r.desde&&x.f<=r.hasta;});
+  var asgDel=asg.filter(function(x){return x.f>=r.desde&&x.f<=r.hasta;});
+  var hueDel=Object.keys(hue||{}).filter(function(f){return f>=r.desde&&f<=r.hasta;});
+  if(!regDel.length&&!asgDel.length&&!hueDel.length){toast('No hay horas cargadas en ese rango','info');return;}
+  if(!SP_READY&&!confirm('⚠️ NO estás conectada a SharePoint.\n\nEl borrado no llegaría a la nube y los datos podrían volver en el próximo sync.\n\n¿Continuar de todas formas?'))return;
+  var msg='¿BORRAR LAS HORAS DEL RANGO '+r.desde+' → '+r.hasta+'?\n\n'+
+    'SE BORRA:\n  · '+asgDel.length+' asignaciones\n  · '+regDel.length+' registros consolidados\n  · '+hueDel.length+' día(s) de huellero\n\n'+
+    'NO SE TOCA:\n  · trabajadores, actividades, módulos, cargos, usuarios\n  · las horas fuera de ese rango\n\n'+
+    'Se guarda una copia de emergencia antes de borrar.';
+  if(!confirm(msg))return;
+  if(SP_READY)await spBackupEmergenciaAsg();
+  reg=reg.filter(function(x){return !(x.f>=r.desde&&x.f<=r.hasta);});
+  asg=asg.filter(function(x){return !(x.f>=r.desde&&x.f<=r.hasta);});
+  hueDel.forEach(function(f){delete hue[f];});
+  guardarLS();stats();renderT1();renderT2();renderT3();renderT4();updExpInfo();
+  if(SP_READY){
+    SP_GUARDANDO=true;spEstado('☁️ Borrando rango en SP...');
+    try{await _spBorrarDatos(asgDel,regDel,asg,hue);spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);}
+    catch(e){alert('Borrado local OK, pero hubo un error al borrar en SP:\n'+e.message+'\nSe reintentará automáticamente.');}
+    finally{SP_GUARDANDO=false;actualizarPendientesSP();}
+  }
+  toast('🧹 Rango '+r.desde+' → '+r.hasta+' borrado ('+(regDel.length+asgDel.length)+' filas)','info',5000);
 }
 async function limpiarTodosRegistros(){
   if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para borrar registros.');return;}
