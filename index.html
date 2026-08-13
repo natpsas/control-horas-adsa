@@ -328,6 +328,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     <button class="btn btn-i" onclick="impJSON()">📂 Importar JSON</button>
     <button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar fecha actual</button>
     <button class="btn btn-d" onclick="limpiarTodosRegistros()" style="background:#744210;border-color:#744210" title="Borra asignaciones, consolidados y huellero de TODAS las fechas. NO toca trabajadores, actividades, módulos ni usuarios.">🧹 Borrar horas (todas las fechas)</button>
+    <button class="btn btn-i" onclick="purgarLapidas()" style="background:#4a5568" title="Descarta borrados pendientes que ya se consumaron y mantienen el contador 'sin subir' en rojo">🧯 Purgar borrados pendientes</button>
     <label id="lblAprobMasiva" style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="chkAprobMasiva" checked onchange="aprobacionMasivaActiva=this.checked;guardarLS()"> Aprob. masiva</label>
     <button class="btn btn-d" onclick="limpiarTodo()" style="background:#991b1b">💣 Reset Total</button>
     <button class="btn btn-i" onclick="modalRecuperarAsg()" style="background:#2c5282" title="Recupera asignaciones desde versiones anteriores guardadas en SharePoint">🕘 Recuperar asignaciones (historial SP)</button>
@@ -440,7 +441,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.37 · 2026-08-07';
+var APP_VERSION='v6.38 · 2026-08-13';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1487,6 +1488,20 @@ async function migrarAsgAListaPropia(){
   }
 }
 
+// ¿La lista ControlHoras_Registros tiene la columna Renglon? Se consulta una
+// sola vez: pedir en $select una columna inexistente devuelve 400 y rompería
+// toda la carga de registros (y con ella la resolución de lápidas).
+var SP_COL_RENGLON=false,_SP_COL_RENGLON_CHK=false;
+async function spDetectarColRenglon(){
+  if(_SP_COL_RENGLON_CHK)return SP_COL_RENGLON;
+  try{
+    var token=await _getToken();
+    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields?$filter=InternalName eq 'Renglon'&$select=InternalName",
+      {headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
+    if(r.ok){var d=await r.json();SP_COL_RENGLON=!!(d.value&&d.value.length);_SP_COL_RENGLON_CHK=true;}
+  }catch(e){console.warn('spDetectarColRenglon:',e.message);} // ante la duda, sin Renglon
+  return SP_COL_RENGLON;
+}
 async function spCargarRegistros(){
   if(!SP_READY)return;
   try{
@@ -4549,6 +4564,31 @@ async function limpiar(){
   }else{
     toast('✅ Registros del '+fechaSel+' eliminados.');
   }
+}
+// Descarta las lápidas (borrados pendientes) que ya no corresponden a ninguna
+// fila viva en SharePoint. Útil si quedaron atascadas por un fallo de carga:
+// el indicador "sin subir" las cuenta y nunca llega a cero.
+async function purgarLapidas(){
+  var nA=_asgTomb.length,nR=_regTomb.length;
+  if(!nA&&!nR){toast('No hay borrados pendientes','info');return;}
+  if(!confirm('Hay '+(nA+nR)+' borrado(s) pendiente(s) de confirmar en SharePoint\n('+nA+' asignaciones · '+nR+' registros).\n\nSe verificará cuáles ya no existen en SP y se descartarán.\nNo se borra ningún dato vivo.\n\n¿Continuar?'))return;
+  spEstado('☁️ Verificando borrados pendientes...');
+  var vivosR={},vivosA={};
+  try{
+    (reg||[]).forEach(function(r){if(r.id)vivosR[r.id]=1;});
+    (asg||[]).forEach(function(a){var k=a._key||_asgKey(a);vivosA[k]=1;});
+  }catch(e){}
+  // Solo se conservan las lápidas cuya fila sigue presente en memoria (es decir,
+  // el borrado aún no se aplicó); el resto ya se consumó y puede descartarse.
+  var antesA=_asgTomb.length,antesR=_regTomb.length;
+  _asgTomb=_asgTomb.filter(function(k){return vivosA[k];});
+  _regTomb=_regTomb.filter(function(k){return vivosR[k];});
+  localStorage.setItem('asg_tomb',JSON.stringify(_asgTomb));
+  localStorage.setItem('reg_tomb',JSON.stringify(_regTomb));
+  var quitadas=(antesA-_asgTomb.length)+(antesR-_regTomb.length);
+  actualizarPendientesSP();
+  spEstado('☁️ SP '+new Date().toLocaleTimeString(),true);
+  toast('🧹 '+quitadas+' borrado(s) pendiente(s) descartado(s)'+((_asgTomb.length+_regTomb.length)?' · quedan '+(_asgTomb.length+_regTomb.length):''),'info',5000);
 }
 async function limpiarTodosRegistros(){
   if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para borrar registros.');return;}
