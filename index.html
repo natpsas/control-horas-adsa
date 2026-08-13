@@ -327,6 +327,7 @@ if(xr(e,"index.xml"))throw new Error("Unsupported NUMBERS 09 file");throw new Er
     <button class="btn btn-s" onclick="expJSON()">💾 Backup JSON</button>
     <button class="btn btn-i" onclick="impJSON()">📂 Importar JSON</button>
     <button class="btn btn-d" onclick="limpiar()">🗑️ Limpiar fecha actual</button>
+    <button class="btn btn-d" onclick="limpiarTodosRegistros()" style="background:#744210;border-color:#744210" title="Borra asignaciones, consolidados y huellero de TODAS las fechas. NO toca trabajadores, actividades, módulos ni usuarios.">🧹 Borrar horas (todas las fechas)</button>
     <label id="lblAprobMasiva" style="display:flex;align-items:center;gap:4px;font-size:12px"><input type="checkbox" id="chkAprobMasiva" checked onchange="aprobacionMasivaActiva=this.checked;guardarLS()"> Aprob. masiva</label>
     <button class="btn btn-d" onclick="limpiarTodo()" style="background:#991b1b">💣 Reset Total</button>
     <button class="btn btn-i" onclick="modalRecuperarAsg()" style="background:#2c5282" title="Recupera asignaciones desde versiones anteriores guardadas en SharePoint">🕘 Recuperar asignaciones (historial SP)</button>
@@ -439,7 +440,7 @@ var fechaSel='',usuarioLogueado=null,limpiando=false;
 var calFechaT4='',calAnioT4=new Date().getFullYear(),calMesT4=new Date().getMonth();
 var CLAVE_MAESTRA='12340';
 // === VERSIÓN — actualizar al publicar una nueva versión ===
-var APP_VERSION='v6.36 · 2026-07-30';
+var APP_VERSION='v6.37 · 2026-08-07';
 function pintarVersion(){var el=document.getElementById('appVerBadge');if(el)el.textContent=APP_VERSION;}
 var aprobacionMasivaActiva=true;
 // === PERMISOS POR ROL ===
@@ -1045,48 +1046,81 @@ function regToSPCols(r){
     FechaConsolid:r.fc||'',FechaAprob:r.fa||'',
     MotivoRechazo:r.mr||'',AprobadoPor:r.aprobado_por||''
   };
-  // Solo si la lista ya tiene la columna: enviar un campo inexistente hace fallar
+  // Solo las columnas que la lista ya tiene: enviar un campo inexistente hace fallar
   // TODO el guardado de la fila (400), así que una lista vieja debe seguir andando.
-  if(SP_COL_RENGLON)o.Renglon=(r.rg!=null&&r.rg!=='')?Number(r.rg):null;
+  if(SP_COLS.Renglon)o.Renglon=(r.rg!=null&&r.rg!=='')?Number(r.rg):null;
+  if(SP_COLS.Anio)o.Anio=(r.anio!=null&&r.anio!=='')?Number(r.anio):null;
+  if(SP_COLS.Semana)o.Semana=(r.sem!=null&&r.sem!=='')?Number(r.sem):null;
+  if(SP_COLS.Consecutivo)o.Consecutivo=r.cons||'';
+  if(SP_COLS.Transcripcion)o.Transcripcion=r.tr||'';
   return o;
 }
-// === Renglón de la planilla física (v6.36) ===
-// Nº de fila tal como está escrita en la foto. Es lo único que permite mostrar la
-// planilla digital en el mismo orden que el papel. La columna puede no existir todavía
-// en la lista: se detecta al conectar y se crea desde Gestión.
-var SP_COL_RENGLON=false;
-async function spDetectarColRenglon(){
-  if(!SP_READY)return false;
+// === TRAZABILIDAD CONTRA LA PLANILLA DE PAPEL (v6.37) ===
+// Para poder auditar cada fila contra la foto hacen falta 5 datos que antes no se
+// guardaban (o iban mezclados dentro de Observaciones):
+//   Anio + Semana + Consecutivo → identifican la HOJA física (2026 · 31 · S02)
+//   Renglon                     → identifica la FILA dentro de esa hoja
+//   Transcripcion               → lo que el operario escribió, literal, sin las notas
+// Son columnas opcionales: se detectan al conectar y se crean desde Gestión, de modo
+// que una lista sin ellas sigue funcionando exactamente igual que antes.
+var SP_COLS={Renglon:false,Anio:false,Semana:false,Consecutivo:false,Transcripcion:false};
+var SP_COLS_XML={
+  Renglon:"<Field Type='Number' DisplayName='Renglon' Name='Renglon' StaticName='Renglon' Decimals='0' Min='0'/>",
+  Anio:"<Field Type='Number' DisplayName='Anio' Name='Anio' StaticName='Anio' Decimals='0'/>",
+  Semana:"<Field Type='Number' DisplayName='Semana' Name='Semana' StaticName='Semana' Decimals='0' Min='0'/>",
+  Consecutivo:"<Field Type='Text' DisplayName='Consecutivo' Name='Consecutivo' StaticName='Consecutivo' MaxLength='10'/>",
+  Transcripcion:"<Field Type='Note' DisplayName='Transcripcion' Name='Transcripcion' StaticName='Transcripcion' NumLines='2' RichText='FALSE'/>"
+};
+async function spDetectarCols(){
+  if(!SP_READY)return SP_COLS;
   try{
     var token=await _getToken();
-    var u=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields?$select=InternalName&$filter="+encodeURIComponent("InternalName eq 'Renglon'");
+    var u=SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields?$select=InternalName&$top=500";
     var r=await fetch(u,{headers:{'Accept':'application/json;odata=nometadata','Authorization':'Bearer '+token}});
-    if(!r.ok){SP_COL_RENGLON=false;return false;}
-    var d=await r.json();
-    SP_COL_RENGLON=!!(d.value&&d.value.length);
-  }catch(e){SP_COL_RENGLON=false;}
-  return SP_COL_RENGLON;
+    if(!r.ok)return SP_COLS;
+    var d=await r.json();var hay={};
+    (d.value||[]).forEach(function(f){hay[f.InternalName]=true;});
+    Object.keys(SP_COLS).forEach(function(k){SP_COLS[k]=!!hay[k];});
+  }catch(e){}
+  return SP_COLS;
 }
-async function spCrearColRenglon(){
+async function spCrearColsTrazabilidad(){
   if(!SP_READY){alert('Sin conexión a SharePoint.');return;}
   try{
-    if(await spDetectarColRenglon()){toast('✅ La columna Renglon ya existe en '+SP_LIST_REG);return;}
+    await spDetectarCols();
+    var faltan=Object.keys(SP_COLS).filter(function(k){return !SP_COLS[k];});
+    if(!faltan.length){toast('✅ '+SP_LIST_REG+' ya tiene las 5 columnas de trazabilidad');return;}
     var token=await _getToken();var digest=await _spGetDigest();
-    var xml="<Field Type='Number' DisplayName='Renglon' Name='Renglon' StaticName='Renglon' Decimals='0' Min='0'/>";
-    var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields/createfieldasxml",{
-      method:'POST',
-      headers:{'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token},
-      body:JSON.stringify({parameters:{SchemaXml:xml,Options:8}}) // 8 = respetar el nombre interno
-    });
-    if(!r.ok){var t=await r.text();throw new Error(r.status+': '+t.substring(0,140));}
-    SP_COL_RENGLON=true;
-    toast('✅ Columna Renglon creada en '+SP_LIST_REG+'. Vuelve a sincronizar para subir los renglones.',
-      'info',7000);
-  }catch(e){
-    alert('No se pudo crear la columna Renglon:\n'+e.message+
-      '\n\nSi es un problema de permisos, pide a un administrador del sitio que agregue a la lista "'+SP_LIST_REG+
-      '" una columna de tipo Número llamada exactamente: Renglon');
-  }
+    var hdr={'Accept':'application/json;odata=nometadata','Content-Type':'application/json;odata=nometadata','X-RequestDigest':digest,'Authorization':'Bearer '+token};
+    var creadas=[],errs=[];
+    for(var i=0;i<faltan.length;i++){
+      var col=faltan[i];
+      var r=await fetch(SP_URL+"/_api/web/lists/getbytitle('"+SP_LIST_REG+"')/fields/createfieldasxml",{
+        method:'POST',headers:hdr,
+        body:JSON.stringify({parameters:{SchemaXml:SP_COLS_XML[col],Options:8}}) // 8 = respetar el nombre interno
+      });
+      if(r.ok){SP_COLS[col]=true;creadas.push(col);}
+      else{var t=await r.text();errs.push(col+' ('+r.status+')');}
+    }
+    if(creadas.length)toast('✅ Columnas creadas: '+creadas.join(', ')+'. Usa "☁️ Subir todo a SP" para completar los datos.','info',8000);
+    if(errs.length)alert('No se pudieron crear: '+errs.join(', ')+
+      '\n\nSi es un problema de permisos, pide a un administrador del sitio que las agregue a la lista "'+SP_LIST_REG+
+      '":\n· Renglon (Número)\n· Anio (Número)\n· Semana (Número)\n· Consecutivo (Texto)\n· Transcripcion (Varias líneas)');
+  }catch(e){alert('Error creando columnas: '+e.message);}
+}
+// "31.S02" → {sem:31, cons:'S02'} · el año sale de la fecha (con ajuste en el cambio
+// de año: semana 52-53 en enero es del año anterior y semana 1 en diciembre del siguiente).
+function _pdPartesRef(ref,fecha){
+  var m=String(ref||'').match(/^(\d{1,2})\s*[.\-]\s*(.+)$/);
+  if(!m)return {sem:null,cons:String(ref||'').trim()||'',anio:_pdAnioDe(fecha,null)};
+  var sem=parseInt(m[1],10);
+  return {sem:sem,cons:m[2].trim(),anio:_pdAnioDe(fecha,sem)};
+}
+function _pdAnioDe(fecha,sem){
+  if(!/^\d{4}-\d{2}-\d{2}$/.test(String(fecha||'')))return null;
+  var a=parseInt(fecha.substring(0,4),10),mes=parseInt(fecha.substring(5,7),10);
+  if(sem!=null){if(sem>=52&&mes===1)return a-1;if(sem<=1&&mes===12)return a+1;}
+  return a;
 }
 function spColsToReg(it){
   return {
@@ -4518,7 +4552,18 @@ async function limpiar(){
 }
 async function limpiarTodosRegistros(){
   if(!tienePermiso('limpiar_fecha')){alert('No tienes permiso para borrar registros.');return;}
-  if(!confirm('¿Borrar TODOS los registros de TODAS las fechas?\n\nEsto elimina asignaciones, consolidados y huellas de todos los días.\nLa configuración (trabajadores, actividades, módulos, etc.) NO se toca.\n\nEsta acción no se puede deshacer.'))return;
+  if(!SP_READY&&!confirm('⚠️ NO estás conectada a SharePoint.\n\nSi borras ahora, el borrado NO llegará a la nube y los datos podrían volver en el próximo sync.\n\nSe recomienda cancelar, reconectar y volver a intentar.\n\n¿Continuar de todas formas?'))return;
+  var msg='¿BORRAR EL HISTÓRICO DE HORAS COMPLETO?\n\n'+
+    'SE BORRA (todas las fechas):\n'+
+    '  · '+asg.length+' asignaciones\n'+
+    '  · '+reg.length+' registros consolidados\n'+
+    '  · '+Object.keys(hue||{}).length+' día(s) de huellero\n\n'+
+    'NO SE TOCA:\n'+
+    '  · '+TRB.length+' trabajadores\n'+
+    '  · '+ACT.length+' actividades\n'+
+    '  · módulos, unidades, cargos, usuarios y permisos\n\n'+
+    'Se guarda una copia de emergencia antes de borrar.\nEsta acción no se puede deshacer.';
+  if(!confirm(msg))return;
   // Copia de seguridad de emergencia antes de borrar (recuperable desde
   // "🕘 Recuperar asignaciones" si fue un error).
   if(SP_READY)await spBackupEmergenciaAsg();
